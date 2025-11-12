@@ -1,4 +1,4 @@
-# NoviList
+# NovaList
 
 > **Une solution complète de gestion d'employés et de données Excel avec authentification sécurisée**
 
