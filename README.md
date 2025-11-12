@@ -1,8 +1,27 @@
-# Novalist
+# NoviList
+
+> **Une solution complète de gestion d'employés et de données Excel avec authentification sécurisée**
+
+NoviList est une application web moderne qui combine la gestion d'utilisateurs, l'authentification multi-facteurs et le traitement intelligent de fichiers Excel. Conçue pour les entreprises et organisations nécessitant un contrôle précis des accès et une visualisation flexible des données employés.
+
+## Description
+
+NoviList offre une plateforme sécurisée permettant de :
+- **Gérer les utilisateurs** avec un système de rôles administrateur/utilisateur
+- **Importer et visualiser des données Excel** avec une interface responsive
+- **Lier les utilisateurs aux employés** pour un accès personnalisé aux données
+- **Contrôler les permissions** avec une authentification renforcée
+- **Administrer facilement** avec un panel d'administration complet
+
+### Cas d'usage principaux
+- **Entreprises** : Gestion des données RH et accès employés
+- **Organisations** : Contrôle d'accès aux informations sensibles  
+- **Équipes** : Collaboration sécurisée autour de données Excel
+- **Administrations** : Gestion centralisée des utilisateurs et permissions
 
 ## Fonctionnalités
 
-### 🔐 Authentification & Sécurité
+### Authentification & Sécurité
 - Authentification par email avec codes de vérification
 - Authentification multi-facteurs (TOTP)
 - Système de rôles utilisateur/administrateur
@@ -10,15 +29,19 @@
 - Gestion des emails autorisés pour l'inscription
 - Synchronisation automatique entre utilisateurs et emails autorisés
 
-### 📊 Gestion Excel
+### Gestion Excel & Employés
 - **Import de fichiers Excel** (.xlsx, .xls, .csv) - Réservé aux administrateurs
-- **Affichage des données** sur le tableau de bord pour tous les utilisateurs
+- **Liaison employé-utilisateur** - Les utilisateurs voient uniquement leur onglet personnel
+- **Onglets dynamiques** - Génération automatique d'onglets par employé depuis Excel
+- **Accès personnalisé** - Chaque utilisateur lié ne voit que ses propres données
+- **Interface admin complète** - Liaison des emails utilisateurs aux employés Excel
+- **Affichage des données** sur le tableau de bord avec filtrage par rôle
 - **Sélection des colonnes** à afficher (contrôle administrateur uniquement)
 - **Correction automatique de l'encodage** UTF-8 (caractères accentués français)
 - **Tableau responsive** avec en-tête fixe et scroll optimisé
 - **Parsing intelligent** des données avec nettoyage automatique
 
-### 🎨 Interface Utilisateur
+### Interface Utilisateur
 - Design responsive avec glassmorphisme
 - Animations et effets visuels modernes
 - Interface adaptée à la taille de la fenêtre (pas de scroll global)
@@ -91,7 +114,7 @@ src/
 - `POST /api/auth/verify-code` - Vérifier le code email
 - `POST /api/auth/setup-totp` - Configurer l'authentification TOTP
 - `POST /api/auth/verify-totp` - Vérifier le code TOTP
-- `GET /api/auth/me` - Obtenir les informations utilisateur
+- `GET /api/auth/me` - Obtenir les informations utilisateur (avec données employé)
 - `POST /api/auth/logout` - Déconnexion
 
 ### Administration
@@ -101,6 +124,9 @@ src/
 - `GET /api/admin/allowed-emails` - Lister les emails autorisés
 - `POST /api/admin/allowed-emails` - Ajouter un email autorisé
 - `DELETE /api/admin/allowed-emails` - Supprimer un email autorisé
+- `GET /api/admin/employee-link` - Lister les liaisons employé-utilisateur
+- `POST /api/admin/employee-link` - Lier un utilisateur à un employé
+- `DELETE /api/admin/employee-link` - Supprimer une liaison employé-utilisateur
 
 ### Excel
 - `GET /api/excel` - Récupérer les données Excel stockées
@@ -112,10 +138,20 @@ src/
 Les administrateurs peuvent :
 - **Gérer les utilisateurs** (consulter, modifier les rôles, supprimer)
 - **Gérer les emails autorisés** pour l'inscription
+- **Lier les utilisateurs aux employés** avec interface dédiée
 - **Importer des fichiers Excel** (.xlsx, .xls, .csv) sur le tableau de bord
 - **Configurer les colonnes** à afficher pour tous les utilisateurs
 - **Supprimer les données Excel** importées
+- **Voir tous les onglets employés** dans la sidebar
 - Accéder à un **panel d'administration** dédié avec interface moderne
+
+### Fonctionnalités utilisateur standard
+
+Les utilisateurs standard peuvent :
+- **Voir uniquement leur onglet employé** dans la sidebar (après liaison par l'admin)
+- **Accéder à leurs données personnelles** extraites du fichier Excel
+- **Visualiser le tableau de bord** avec les colonnes configurées par l'admin
+- **Gérer leur profil** et leur authentification TOTP
 
 ## Fonctionnalités Excel
 

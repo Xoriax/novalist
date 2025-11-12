@@ -1,4 +1,81 @@
-# Release Notes - Novalist
+# Release Notes - NoviList
+
+## Version 1.2.0 - Liaison Employé-Utilisateur (12 novembre 2025)
+
+### Nouvelle fonctionnalité majeure : Liaison Employé-Utilisateur
+
+**Système de liaison personnalisé**
+- **Interface d'administration** : Nouvel onglet pour lier les utilisateurs aux employés
+- **Extraction automatique** : Les employés sont extraits automatiquement du fichier Excel
+- **Liaison par email** : Sélection d'un utilisateur et d'un employé pour créer la liaison
+- **Accès personnalisé** : Chaque utilisateur lié ne voit que son onglet employé
+- **Gestion des permissions** : Les admins voient tous les employés, les utilisateurs leur seul employé
+
+**Onglets dynamiques par employé**
+- **Génération automatique** : Onglets créés automatiquement depuis les données Excel
+- **Format intelligent** : Affichage "CODE-Nom Prénom" (ex: FRCO1-Francis CORTEZ)
+- **Filtrage par rôle** : Admin voit tous, utilisateur standard voit le sien uniquement
+- **Navigation intuitive** : Onglets intégrés dans la sidebar existante
+- **Mise à jour en temps réel** : Synchronisation automatique avec les données Excel
+
+**API de gestion des liaisons**
+- **GET /api/admin/employee-link** : Récupérer toutes les liaisons existantes
+- **POST /api/admin/employee-link** : Créer une nouvelle liaison employé-utilisateur  
+- **DELETE /api/admin/employee-link** : Supprimer une liaison existante
+- **Validation sécurisée** : Vérification des permissions administrateur
+- **Gestion d'erreurs** : Messages clairs en cas de conflit ou erreur
+
+### Améliorations UI/UX
+
+**Interface administrateur enrichie**
+- **Nouvel onglet "Liaison Employé"** : Interface dédiée dans le panel admin
+- **Sélecteurs intelligents** : Dropdowns avec utilisateurs non liés et employés disponibles
+- **Tableau des liaisons** : Affichage clair des connexions existantes
+- **Actions rapides** : Boutons de suppression avec confirmation
+- **Design cohérent** : Intégration parfaite avec l'interface existante
+
+**Sidebar améliorée**
+- **Onglets plus grands** : Taille augmentée pour une meilleure lisibilité
+- **Espacement optimisé** : Padding et margins ajustés (16px→20px vertical)
+- **Police agrandie** : Taille de police augmentée (14px→15px)
+- **Hauteur uniforme** : min-height: 52px pour tous les onglets
+- **Amélioration visuelle** : Gap et styles optimisés
+
+### Améliorations techniques
+
+**Modèle utilisateur étendu**
+- **Champ employee** : Nouveau sous-document avec id, name, linked
+- **Persistance MongoDB** : Stockage sécurisé des liaisons
+- **Validation des données** : Contrôles d'intégrité côté serveur
+- **Migration automatique** : Compatibilité avec les utilisateurs existants
+
+**JWT enrichi**
+- **Support dual uid/sub** : Compatibilité étendue pour l'authentification
+- **Champ email ajouté** : Identification robuste des utilisateurs
+- **Session persistante** : Maintien des liaisons employé entre les sessions
+- **Sécurité renforcée** : Validation des tokens avec données employé
+
+**Extraction intelligente des employés**
+- **Parsing avancé** : Identification automatique des colonnes employé
+- **Déduplication** : Élimination des doublons par clé unique
+- **Nettoyage des données** : Normalisation des noms et codes
+- **Performance optimisée** : Cache des employés extraits
+
+### 🛠 Corrections et optimisations
+
+**Logique de filtrage des onglets**
+- **Correction majeure** : Les utilisateurs voient maintenant leur onglet employé
+- **Filtrage intelligent** : Admin = tous, Utilisateur = son employé uniquement
+- **Synchronisation** : Mise à jour temps réel des onglets après liaison
+- **Gestion des états** : Onglets visibles/masqués selon les permissions
+
+**Stabilité et performance**
+- **Gestion d'erreurs robuste** : Cas d'edge couverts
+- **Validation côté client/serveur** : Double contrôle des données
+- **Optimisation requêtes** : Moins d'appels API redondants
+- **Mémoire optimisée** : Nettoyage des données inutilisées
+
+---
 
 ## Version 1.1.0 - Gestion Excel (12 novembre 2025)
 

@@ -39,7 +39,7 @@ export async function POST(req: Request) {
 
     // Si l'utilisateur a MFA activé, créer une session pré-auth
     if (user.mfa?.enabled) {
-      const preToken = await signSession({ uid: user._id.toString(), role: user.role }, 0.25); // 15 minutes
+      const preToken = await signSession({ uid: user._id.toString(), role: user.role, email: user.email }, 0.25); // 15 minutes
       const cookieStore = await cookies();
       cookieStore.set("preauth", preToken, {
         httpOnly: true, sameSite: "lax",
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     }
 
     // Sinon, créer une session complète
-    const sessionToken = await signSession({ uid: user._id.toString(), role: user.role }, 24);
+    const sessionToken = await signSession({ uid: user._id.toString(), role: user.role, email: user.email }, 24);
     const cookieStore = await cookies();
     cookieStore.set("session", sessionToken, {
       httpOnly: true, sameSite: "lax",

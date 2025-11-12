@@ -24,7 +24,7 @@ export async function POST(req: Request) {
   const ok = authenticator.verify({ token: code, secret: user.mfa.totpSecret });
   if (!ok) return NextResponse.json({ error: "Code TOTP invalide" }, { status: 400 });
 
-  const tokenJwt = await signSession({ uid: user._id.toString(), role: user.role }, 24);
+  const tokenJwt = await signSession({ uid: user._id.toString(), role: user.role, email: user.email }, 24);
   cookieStore.delete("preauth");
   cookieStore.set("session", tokenJwt, {
     httpOnly: true,
