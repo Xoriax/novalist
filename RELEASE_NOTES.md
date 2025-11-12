@@ -1,4 +1,90 @@
-# Release Notes - Novalist v1.0.0
+# Release Notes - Novalist
+
+## Version 1.1.0 - Gestion Excel (12 novembre 2025)
+
+### Nouvelles fonctionnalités Excel
+
+**Import et gestion de fichiers Excel**
+- **Import de fichiers Excel** : Support complet des formats .xlsx, .xls et .csv
+- **Accès administrateur uniquement** : Seuls les admins peuvent importer des fichiers
+- **Parsing intelligent** : Traitement automatique des en-têtes et données
+- **Validation des fichiers** : Vérification du format et du contenu avant import
+- **Remplacement automatique** : Chaque nouvel import remplace les données précédentes
+
+**Affichage optimisé des données**
+- **Tableau responsive** : Interface adaptée à toutes les tailles d'écran
+- **En-tête fixe opaque** : Les colonnes restent visibles pendant le scroll
+- **Interface sans scroll global** : Hauteur adaptée à la fenêtre utilisateur
+- **Design glassmorphisme** : Intégration parfaite avec le thème existant
+
+**Sélection dynamique des colonnes**
+- **Panneau de configuration** : Interface intuitive pour sélectionner les colonnes
+- **Contrôle administrateur** : Seuls les admins peuvent modifier les colonnes affichées
+- **Actions rapides** : Boutons "Tout sélectionner/désélectionner"
+- **Mise à jour temps réel** : Le tableau se met à jour instantanément
+- **Grille responsive** : Organisation automatique des checkboxes de colonnes
+
+**Correction automatique de l'encodage**
+- **Support UTF-8** : Correction des caractères accentués français
+- **Nettoyage intelligent** : Remplacement des caractères mal encodés (é, è, à, ç, etc.)
+- **Application globale** : Correction dans les en-têtes et données
+- **Compatibilité legacy** : Support des anciens fichiers Excel avec problèmes d'encodage
+
+### Améliorations techniques
+
+**API Excel**
+- **Endpoint GET /api/excel** : Récupération des données stockées
+- **Endpoint POST /api/excel** : Import sécurisé (admin uniquement)
+- **Endpoint DELETE /api/excel** : Suppression des données (admin uniquement)
+- **Traitement des erreurs** : Gestion complète des cas d'erreur
+- **Validation sécurisée** : Vérification des permissions et du contenu
+
+**Modèle de données**
+- **ExcelData Model** : Nouveau modèle MongoDB pour stocker les fichiers Excel
+- **Métadonnées complètes** : Filename, uploadedBy, uploadedAt, dimensions
+- **Structure flexible** : Support de tout type de données Excel
+- **Optimisation requêtes** : Index sur les champs de recherche
+
+**Interface utilisateur**
+- **Nouveaux composants** : Sélecteur de colonnes, tableau Excel responsive
+- **Styles CSS étendus** : Plus de 100 lignes de nouveaux styles
+- **Animations fluides** : Transitions pour les interactions utilisateur
+- **Accessibilité** : Labels et contrôles accessibles
+
+### Interface utilisateur améliorée
+
+**Actions administrateur**
+- **Bouton "Importer Excel"** : Interface de sélection de fichiers intuitive
+- **Bouton "Colonnes"** : Accès rapide au panneau de configuration
+- **Bouton "Effacer les données"** : Suppression sécurisée avec confirmation
+- **Design cohérent** : Intégration parfaite avec l'interface existante
+
+**Tableau de données**
+- **Largeur optimisée** : Utilisation complète de l'espace disponible
+- **Scroll vertical uniquement** : Dans le contenu du tableau
+- **En-tête sticky** : Reste visible pendant la navigation
+- **Alternance de couleurs** : Améliore la lisibilité des données
+
+### 🔧 Corrections et optimisations
+
+**Problèmes d'encodage résolus**
+- **Caractères français** : "J�r�" → "Jérôme" 
+- **Accents restaurés** : Correction automatique des é, è, à, ç
+- **Compatibilité fichiers** : Support des fichiers Excel anciens et récents
+- **Affichage uniforme** : Correction côté serveur et client
+
+**Performance et UX**
+- **Chargement optimisé** : Parsing efficace des gros fichiers Excel
+- **Interface responsive** : Adaptation automatique aux petits écrans
+- **Feedback utilisateur** : Messages de confirmation et d'erreur clairs
+- **Mémoire optimisée** : Nettoyage automatique des anciennes données
+
+### Dépendances ajoutées
+
+- **xlsx ^0.18.5** : Traitement des fichiers Excel et CSV
+- Aucune autre dépendance externe ajoutée
+
+---
 
 ## Version 1.0.0 - Release Initiale (12 novembre 2025)
 

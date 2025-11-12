@@ -9,12 +9,282 @@ interface User {
   id: string;
 }
 
+interface ExcelData {
+  headers: string[];
+  data: Record<string, unknown>[];
+  filename: string | null;
+  uploadedBy: string | null;
+  uploadedAt: string | null;
+  rowCount: number;
+  columnCount: number;
+}
+
 interface AdminUsersContentProps {
   onBack: () => void;
 }
 
 interface AdminEmailsContentProps {
   onBack: () => void;
+}
+
+interface DashboardContentProps {
+  user: User | null;
+}
+
+function DashboardContent({ user }: DashboardContentProps) {
+  const [excelData, setExcelData] = useState<ExcelData>({
+    headers: [],
+    data: [],
+    filename: null,
+    uploadedBy: null,
+    uploadedAt: null,
+    rowCount: 0,
+    columnCount: 0
+  });
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
+  const [showColumnSelector, setShowColumnSelector] = useState(false);
+
+  useEffect(() => {
+    fetchExcelData();
+  }, []);
+
+  // Fonction pour corriger les problèmes d'encodage
+  const fixEncoding = (text: string): string => {
+    if (typeof text !== 'string') return String(text);
+    
+    return text
+      .replace(/Ã©/g, 'é')
+      .replace(/Ã¨/g, 'è')
+      .replace(/Ã /g, 'à')
+      .replace(/Ã¢/g, 'â')
+      .replace(/Ã´/g, 'ô')
+      .replace(/Ã»/g, 'û')
+      .replace(/Ã®/g, 'î')
+      .replace(/Ã§/g, 'ç')
+      .replace(/Ã±/g, 'ñ')
+      .replace(/â€™/g, "'")
+      .replace(/â€œ/g, '"')
+      .replace(/â€/g, '"')
+      .replace(/â€¦/g, '...')
+      .replace(/â€"/g, '–')
+      .replace(/â€"/g, '—')
+      .replace(/�/g, ''); // Supprimer les caractères de remplacement
+  };
+
+  const fetchExcelData = async () => {
+    try {
+      const response = await fetch("/api/excel");
+      if (response.ok) {
+        const data = await response.json();
+        setExcelData(data);
+        // Initialiser toutes les colonnes comme visibles par défaut
+        if (data.headers && data.headers.length > 0) {
+          setVisibleColumns(data.headers);
+        }
+      }
+    } catch (error) {
+      console.error("Erreur lors de la récupération des données Excel:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/excel", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        alert(`Fichier importé avec succès: ${result.rowCount} lignes, ${result.columnCount} colonnes`);
+        await fetchExcelData(); // Recharger les données
+      } else {
+        const error = await response.json();
+        alert(`Erreur: ${error.error}`);
+      }
+    } catch (error) {
+      console.error("Erreur lors de l'upload:", error);
+      alert("Erreur lors de l'upload du fichier");
+    } finally {
+      setUploading(false);
+      // Reset file input
+      event.target.value = "";
+    }
+  };
+
+  const clearData = async () => {
+    if (!confirm("Êtes-vous sûr de vouloir supprimer toutes les données ?")) {
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/excel", {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        alert("Données supprimées avec succès");
+        await fetchExcelData();
+      } else {
+        const error = await response.json();
+        alert(`Erreur: ${error.error}`);
+      }
+    } catch (error) {
+      console.error("Erreur lors de la suppression:", error);
+      alert("Erreur lors de la suppression");
+    }
+  };
+
+  const toggleColumn = (columnName: string) => {
+    setVisibleColumns(prev => {
+      if (prev.includes(columnName)) {
+        return prev.filter(col => col !== columnName);
+      } else {
+        return [...prev, columnName];
+      }
+    });
+  };
+
+  const toggleAllColumns = () => {
+    if (visibleColumns.length === excelData.headers.length) {
+      setVisibleColumns([]);
+    } else {
+      setVisibleColumns(excelData.headers);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="content-section">
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Chargement des données...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="content-section">
+      <div className="section-header">
+        <h2 className="section-title">Tableau de bord</h2>
+        <p className="section-subtitle">Données Excel importées</p>
+      </div>
+
+      {/* Actions admin */}
+      {user?.role === "admin" && (
+        <div className="excel-actions">
+          <div className="action-group">
+            <label className="upload-btn">
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileUpload}
+                disabled={uploading}
+                style={{ display: "none" }}
+              />
+              <span className="upload-icon">📁</span>
+              <span>{uploading ? "Import en cours..." : "Importer Excel"}</span>
+            </label>
+            
+            {excelData.filename && (
+              <>
+                <button 
+                  onClick={() => setShowColumnSelector(!showColumnSelector)} 
+                  className="column-btn"
+                >
+                  <span className="column-icon">🔧</span>
+                  <span>Colonnes</span>
+                </button>
+                
+                <button onClick={clearData} className="clear-btn">
+                  <span className="clear-icon">🗑️</span>
+                  <span>Effacer les données</span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Sélecteur de colonnes (admin uniquement) */}
+      {user?.role === "admin" && showColumnSelector && excelData.headers.length > 0 && (
+        <div className="column-selector">
+          <div className="selector-header">
+            <h4>Sélectionner les colonnes à afficher</h4>
+            <button onClick={toggleAllColumns} className="toggle-all-btn">
+              {visibleColumns.length === excelData.headers.length ? "Tout désélectionner" : "Tout sélectionner"}
+            </button>
+          </div>
+          <div className="columns-grid">
+            {excelData.headers.map((header) => (
+              <label key={header} className="column-checkbox">
+                <input
+                  type="checkbox"
+                  checked={visibleColumns.includes(header)}
+                  onChange={() => toggleColumn(header)}
+                />
+                <span className="checkbox-label">{fixEncoding(header)}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+
+
+      {/* Tableau des données */}
+      {excelData.headers.length > 0 ? (
+        <div className="excel-table-container">
+          <div className="excel-table-wrapper">
+            <table className="excel-table">
+              <thead>
+                <tr>
+                  {visibleColumns.map((header, index) => (
+                    <th key={index}>{fixEncoding(header)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {excelData.data.map((row, rowIndex) => (
+                  <tr key={rowIndex}>
+                    {visibleColumns.map((header, colIndex) => (
+                      <td key={colIndex}>
+                        {fixEncoding(String(row[header] || ""))}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className="empty-state">
+          <div className="empty-icon">📊</div>
+          <h4>Aucune donnée</h4>
+          <p>
+            {user?.role === "admin" 
+              ? "Importez un fichier Excel pour commencer" 
+              : "Aucun fichier Excel n'a été importé pour le moment"
+            }
+          </p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function AdminUsersContent({ onBack }: AdminUsersContentProps) {
@@ -348,55 +618,7 @@ export default function Dashboard() {
   const renderContent = () => {
     switch (activeTab) {
       case "dashboard":
-        return (
-          <div className="content-section">
-            <div className="section-header">
-              <h2 className="section-title">Tableau de bord</h2>
-              <p className="section-subtitle">Bienvenue dans votre espace personnel</p>
-            </div>
-            
-            <div className="welcome-card">
-              <div className="welcome-content">
-                <div className="welcome-avatar">
-                  {user?.email?.[0]?.toUpperCase() || 'U'}
-                </div>
-                <div className="welcome-info">
-                  <h3>Bienvenue, <span className="highlight">{user?.email}</span></h3>
-                  <p>Connecté en tant que <span className={`role-highlight ${user?.role}`}>
-                    {user?.role === "admin" ? "Administrateur" : "Utilisateur"}
-                  </span></p>
-                </div>
-              </div>
-            </div>
-
-            <div className="stats-grid">
-              <div className="stat-card">
-                <div className="stat-icon activity">📈</div>
-                <div className="stat-content">
-                  <h4>Activité</h4>
-                  <p>Dernière connexion aujourd&apos;hui</p>
-                  <div className="stat-indicator active"></div>
-                </div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-icon security">🔒</div>
-                <div className="stat-content">
-                  <h4>Sécurité</h4>
-                  <p>MFA activé et configuré</p>
-                  <div className="stat-indicator secure"></div>
-                </div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-icon profile">👤</div>
-                <div className="stat-content">
-                  <h4>Profil</h4>
-                  <p>Compte vérifié et actif</p>
-                  <div className="stat-indicator verified"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
+        return <DashboardContent user={user} />;
       case "admin":
         return (
           <div className="content-section">
