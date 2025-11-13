@@ -313,6 +313,139 @@ function DashboardContent({ user }: DashboardContentProps) {
   );
 }
 
+function UnassignedContent() {
+  const [excelData, setExcelData] = useState<ExcelData>({
+    headers: [],
+    data: [],
+    filename: null,
+    uploadedBy: null,
+    uploadedAt: null,
+    rowCount: 0,
+    columnCount: 0
+  });
+  const [loading, setLoading] = useState(true);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetchExcelData();
+  }, []);
+
+  const fetchExcelData = async () => {
+    try {
+      const response = await fetch("/api/excel");
+      if (response.ok) {
+        const data = await response.json();
+        setExcelData(data);
+        if (data.headers && data.headers.length > 0) {
+          setVisibleColumns(data.headers);
+        }
+      }
+    } catch (error) {
+      console.error("Erreur lors de la récupération des données Excel:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filtrer les données non attribuées
+  const getUnassignedData = () => {
+    if (!excelData.data || excelData.data.length === 0) return [];
+    
+    const employeeIdIndex = excelData.headers.findIndex(header => 
+      header.toLowerCase().includes('employee id') || header.toLowerCase().includes('employeeid')
+    );
+    const employeeNameIndex = excelData.headers.findIndex(header => 
+      header.toLowerCase().includes('employee name') || header.toLowerCase().includes('employeename')
+    );
+    const workOrderStatusIdIndex = excelData.headers.findIndex(header => 
+      header.toLowerCase().includes('work order status id') || header.toLowerCase().includes('workorderstatusid')
+    );
+    const workOrderStatusDescIndex = excelData.headers.findIndex(header => 
+      header.toLowerCase().includes('work order status desc') || header.toLowerCase().includes('workorderstatusdesc')
+    );
+    
+    if (employeeIdIndex === -1 || employeeNameIndex === -1) return [];
+    
+    const employeeIdHeader = excelData.headers[employeeIdIndex];
+    const employeeNameHeader = excelData.headers[employeeNameIndex];
+    const workOrderStatusIdHeader = workOrderStatusIdIndex !== -1 ? excelData.headers[workOrderStatusIdIndex] : null;
+    const workOrderStatusDescHeader = workOrderStatusDescIndex !== -1 ? excelData.headers[workOrderStatusDescIndex] : null;
+    
+    return excelData.data.filter(row => {
+      const employeeId = String(row[employeeIdHeader] || '').trim();
+      const employeeName = String(row[employeeNameHeader] || '').trim();
+      const workOrderStatusId = workOrderStatusIdHeader ? String(row[workOrderStatusIdHeader] || '').trim().toLowerCase() : '';
+      const workOrderStatusDesc = workOrderStatusDescHeader ? String(row[workOrderStatusDescHeader] || '').trim().toLowerCase() : '';
+      
+      // Vérifier que Employee ID et Employee Name sont vides
+      const hasNoEmployee = !employeeId || !employeeName;
+      
+      // Vérifier que Work Order Status est TBP
+      const isTBP = workOrderStatusId === 'tbp' || workOrderStatusDesc.includes('to be planned') || workOrderStatusDesc === 'tbp';
+      
+      return hasNoEmployee && isTBP;
+    });
+  };
+
+  const unassignedData = getUnassignedData();
+
+  if (loading) {
+    return (
+      <div className="content-section">
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Chargement des données...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="content-section">
+      <div className="section-header">
+        <h2 className="section-title">Tâches Non Attribuées</h2>
+        <p className="section-subtitle">Tâches sans employé assigné • Status: TBP (To be planned) • {unassignedData.length} ligne(s)</p>
+      </div>
+
+      {/* Tableau des données non attribuées */}
+      {unassignedData.length > 0 ? (
+        <div className="excel-table-container">
+          <div className="excel-table-wrapper">
+            <table className="excel-table">
+              <thead>
+                <tr>
+                  {visibleColumns.map((header, index) => (
+                    <th key={index} className="excel-header">
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {unassignedData.map((row, rowIndex) => (
+                  <tr key={rowIndex}>
+                    {visibleColumns.map((header, colIndex) => (
+                      <td key={colIndex} className="excel-cell">
+                        {String(row[header] || '')}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className="no-data">
+          <div className="no-data-icon">📋</div>
+          <h3>Aucune tâche non attribuée</h3>
+          <p>Toutes les tâches avec le statut "TBP" ont été attribuées à des employés.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EmployeeContent({ employeeKey }: EmployeeContentProps) {
   const [excelData, setExcelData] = useState<ExcelData>({
     headers: [],
@@ -1002,6 +1135,7 @@ export default function Dashboard() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [adminSubTab, setAdminSubTab] = useState("overview");
+  const [operatorsExpanded, setOperatorsExpanded] = useState(true);
   const [excelData, setExcelData] = useState<ExcelData>({
     headers: [],
     data: [],
@@ -1034,10 +1168,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchUser();
-    if (user?.role === "admin") {
-      fetchExcelData();
-    }
-  }, [fetchUser, user?.role]);
+    fetchExcelData(); // Tous les utilisateurs chargent les données Excel
+  }, [fetchUser]);
 
   const fetchExcelData = async () => {
     try {
@@ -1115,24 +1247,36 @@ export default function Dashboard() {
     );
   }
 
-  const employees = user?.role === "admin" 
-    ? getUniqueEmployees() 
-    : user?.employee?.linked 
-      ? [{ id: user.employee.id!, name: user.employee.name!, fullKey: `${user.employee.id}-${user.employee.name}` }]
-      : [];
+  // Tous les utilisateurs voient tous les onglets employés
+  const employees = getUniqueEmployees();
   
+  // Trouver l'employé lié à l'utilisateur
+  const userLinkedEmployee = user?.employee?.linked && user?.employee?.id && user?.employee?.name 
+    ? employees.find(emp => emp.id === user?.employee?.id && emp.name === user?.employee?.name)
+    : null;
 
-  
   const tabs = [
     { id: "dashboard", label: "Tableau de bord", icon: "📊" },
-    // Onglets des employés (entre dashboard et admin)
-    ...employees.map(emp => ({
+    { id: "unassigned", label: "Non attribué", icon: "❓" }
+  ];
+  
+  // Onglet employé lié (affiché séparément)
+  const linkedEmployeeTab = userLinkedEmployee ? [{
+    id: `employee-${userLinkedEmployee.fullKey}`,
+    label: `Mon profil: ${userLinkedEmployee.name}`,
+    icon: "👨‍💼"
+  }] : [];
+  
+  // Tous les autres employés (sans celui lié à l'utilisateur)
+  const otherEmployeeTabs = employees
+    .filter(emp => !userLinkedEmployee || emp.fullKey !== userLinkedEmployee.fullKey)
+    .map(emp => ({
       id: `employee-${emp.fullKey}`,
       label: `${emp.id}-${emp.name}`,
       icon: "👤"
-    })),
-    ...(user?.role === "admin" ? [{ id: "admin", label: "Panel Admin", icon: "🔧" }] : [])
-  ];
+    }));
+  
+  const adminTabs = user?.role === "admin" ? [{ id: "admin", label: "Panel Admin", icon: "🔧" }] : [];
 
   const renderContent = () => {
     // Gérer les onglets d'employés
@@ -1144,6 +1288,8 @@ export default function Dashboard() {
     switch (activeTab) {
       case "dashboard":
         return <DashboardContent user={user} />;
+      case "unassigned":
+        return <UnassignedContent />;
       case "admin":
         return (
           <div className="content-section">
@@ -1263,12 +1409,67 @@ export default function Dashboard() {
 
           {/* Navigation menu */}
           <nav className="nav-menu">
+            {/* Onglets principaux */}
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`nav-item ${activeTab === tab.id ? "active" : ""}`}
-                data-type={tab.id.startsWith("employee-") ? "employee" : "default"}
+              >
+                <span className="nav-icon">{tab.icon}</span>
+                <span className="nav-text">{tab.label}</span>
+                <div className="nav-indicator"></div>
+              </button>
+            ))}
+            
+            {/* Onglet employé lié (affiché séparément) */}
+            {linkedEmployeeTab.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`nav-item linked-employee ${activeTab === tab.id ? "active" : ""}`}
+              >
+                <span className="nav-icon">{tab.icon}</span>
+                <span className="nav-text">{tab.label}</span>
+                <div className="nav-indicator"></div>
+              </button>
+            ))}
+            
+            {/* Onglet Opérateurs pliable */}
+            {otherEmployeeTabs.length > 0 && (
+              <>
+                <button
+                  onClick={() => setOperatorsExpanded(!operatorsExpanded)}
+                  className={`nav-item parent-item ${operatorsExpanded ? 'expanded' : ''}`}
+                >
+                  <span className="nav-icon">👥</span>
+                  <span className="nav-text">Opérateurs</span>
+                  <span className={`nav-chevron ${operatorsExpanded ? 'expanded' : ''}`}>▼</span>
+                </button>
+                
+                {/* Sous-onglets employés */}
+                <div className={`nav-submenu ${operatorsExpanded ? 'expanded' : 'collapsed'}`}>
+                  {otherEmployeeTabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`nav-item sub-item ${activeTab === tab.id ? "active" : ""}`}
+                    >
+                      <span className="nav-icon">{tab.icon}</span>
+                      <span className="nav-text">{tab.label}</span>
+                      <div className="nav-indicator"></div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            
+            {/* Onglets admin à la fin */}
+            {adminTabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`nav-item ${activeTab === tab.id ? "active" : ""}`}
               >
                 <span className="nav-icon">{tab.icon}</span>
                 <span className="nav-text">{tab.label}</span>

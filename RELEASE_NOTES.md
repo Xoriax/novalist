@@ -1,5 +1,85 @@
 # Release Notes - NoviList
 
+## Version 1.3.0 - Navigation Hierarchique et Interface Optimisee (13 novembre 2025)
+
+### Nouvelle architecture de navigation
+
+**Navigation hierarchique avancee**
+- **Onglet "Operateurs" pliable** : Regroupement intelligent de tous les employes
+- **Systeme d'ouverture/fermeture** : Interface collapsible avec animation fluide
+- **Onglet employe lie separe** : Affichage privilegie hors du groupe operateurs
+- **Organisation logique** : Structure claire separant profil personnel et autres employes
+- **Animation CSS avancee** : Transitions 0.4s avec cubic-bezier pour fluidite optimale
+
+**Interface utilisateur repensee**
+- **Scroll optimise dans sous-menus** : Navigation fluide avec barre de scroll personnalisee
+- **Hauteur adaptive** : 60vh maximum pour le sous-menu avec scroll automatique
+- **Ordre des onglets restructure** : Tableau de bord, Non attribue, Profil lie, Operateurs, Admin
+- **Style distinct pour employe lie** : Design vert emeraude avec bordure laterale coloree
+- **Icones meaningtiques** : Operateurs (groupe), Profil personnel (utilisateur)
+
+**Gestion des permissions et acces**
+- **Acces universel aux donnees Excel** : Tous les utilisateurs peuvent charger les donnees
+- **Generation d'onglets pour tous** : Fini la restriction admin pour voir les onglets employes
+- **Filtrage intelligent** : Separation automatique employe lie vs autres operateurs
+- **Visibilite globale** : Tous les utilisateurs voient maintenant tous les onglets employes
+
+### Ameliorations techniques
+
+**Systeme de scroll hierarchique**
+- **Scroll parent optimise** : Barre de scroll principale avec design gradiant violet-bleu
+- **Scroll enfant specialise** : Sous-menu avec scroll vert assorti aux employes
+- **Scroll-behavior smooth** : Defilement fluide sur tous les elements
+- **Compatibilite Firefox** : scrollbar-width thin pour support etendu
+
+**Architecture CSS avancee**
+- **Classes hierarchiques** : parent-item, sub-item, linked-employee avec styles distincts
+- **Variables CSS dynamiques** : max-height, opacity, transform geres par classes
+- **Effets visuels avances** : Backdrop-filter, box-shadow, border-radius coordonnes
+- **Responsive design** : Adaptation automatique sur toutes tailles d'ecran
+
+**Logique JavaScript optimisee**
+- **Etat operatorsExpanded** : Gestion claire de l'ouverture/fermeture
+- **Separation des donnees** : linkedEmployeeTab vs otherEmployeeTabs
+- **Detection automatique** : Identification de l'employe lie par comparaison user.employee
+- **Prevention des erreurs** : Verification TypeScript avec optional chaining
+
+### Corrections et optimisations
+
+**Resolution du probleme de visibilite des onglets**
+- **Suppression restriction admin** : fetchExcelData maintenant accessible a tous
+- **Generation universelle** : getUniqueEmployees disponible pour tous les utilisateurs  
+- **Correction useEffect** : Chargement conditionnel supprime pour acces global
+- **Synchronisation donnees** : Onglets generes correctement des le premier chargement
+
+**Ameliorations UX majeures**
+- **Navigation intuitive** : Structure logique avec profil en premier, operateurs groupes
+- **Scroll accessible** : Fin des limitations d'acces aux operateurs en bas de liste
+- **Design coherent** : Styles uniformes avec variations meaningtiques par type d'onglet
+- **Performance optimisee** : Rendu conditionnel et animations GPU-accelerated
+
+**Architecture de donnees**
+- **Filtrage employe lie** : Extraction automatique de la liste generale
+- **Gestion des cas edge** : Utilisateur sans liaison, admin avec liaison, etc.
+- **Persistance des selections** : Onglet actif preserve lors des operations pliage/depliage
+- **Validation des donnees** : Verification presence user.employee avant traitement
+
+### Interface et styles
+
+**Design system coherent**
+- **Palette couleurs etendue** : Vert emeraude pour lie, violet pour operateurs, bleu pour admin
+- **Typographie optimisee** : font-weight 600 pour employe lie, tailles adaptees par contexte
+- **Espacement harmonieux** : margins, paddings et gaps calibres pour hierarchie visuelle
+- **Effets de profondeur** : box-shadow et backdrop-filter pour separation des niveaux
+
+**Animations et transitions**
+- **Duree calibree** : 0.4s pour ouverture/fermeture, 0.3s pour hovers et selections
+- **Courbes d'easing** : cubic-bezier pour acceleration/deceleration naturelle
+- **Transform coordonnees** : translateX, translateY, rotate pour interactions fluides
+- **Opacity et scale** : Effets de fondu et redimensionnement coordonnes
+
+---
+
 ## Version 1.2.0 - Liaison Employé-Utilisateur (12 novembre 2025)
 
 ### Nouvelle fonctionnalité majeure : Liaison Employé-Utilisateur

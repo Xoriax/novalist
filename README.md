@@ -33,7 +33,8 @@ NoviList offre une plateforme sécurisée permettant de :
 - **Import de fichiers Excel** (.xlsx, .xls, .csv) - Réservé aux administrateurs
 - **Liaison employé-utilisateur** - Les utilisateurs voient uniquement leur onglet personnel
 - **Onglets dynamiques** - Génération automatique d'onglets par employé depuis Excel
-- **Accès personnalisé** - Chaque utilisateur lié ne voit que ses propres données
+- **Navigation hiérarchique** - Onglet "Opérateurs" pliable regroupant tous les employés
+- **Accès personnalisé** - Onglet employé lié affiché séparément hors du groupe
 - **Interface admin complète** - Liaison des emails utilisateurs aux employés Excel
 - **Affichage des données** sur le tableau de bord avec filtrage par rôle
 - **Sélection des colonnes** à afficher (contrôle administrateur uniquement)
@@ -148,7 +149,9 @@ Les administrateurs peuvent :
 ### Fonctionnalités utilisateur standard
 
 Les utilisateurs standard peuvent :
-- **Voir uniquement leur onglet employé** dans la sidebar (après liaison par l'admin)
+- **Voir leur onglet employé personnel** affiché séparément en haut de la sidebar
+- **Accéder à l'onglet "Opérateurs"** avec liste pliable de tous les autres employés
+- **Naviguer facilement** avec scroll optimisé dans la liste des opérateurs
 - **Accéder à leurs données personnelles** extraites du fichier Excel
 - **Visualiser le tableau de bord** avec les colonnes configurées par l'admin
 - **Gérer leur profil** et leur authentification TOTP
