@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Code de connexion - NoviList</title>
+        <title>Code de connexion - Novalist</title>
         <style>
             body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
             table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
@@ -94,7 +94,7 @@ export async function POST(req: Request) {
     </head>
     <body style="margin: 0; padding: 0; background-color: #f8fafc;">
         <div style="display: none; font-size: 1px; color: #fefefe; line-height: 1px; font-family: 'Inter', sans-serif; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
-            Votre code de connexion NoviList
+            Votre code de connexion Novalist
         </div>
         
         <table border="0" cellpadding="0" cellspacing="0" width="100%">
@@ -112,7 +112,7 @@ export async function POST(req: Request) {
                                                 <tr>
                                                     <td align="center">
                                                         <h1 style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 32px; font-weight: 700; color: #6366f1; margin: 0; padding-bottom: 8px;">
-                                                            NoviList
+                                                            Novalist
                                                         </h1>
                                                         <p style="font-family: 'Inter', sans-serif; font-size: 16px; color: #64748b; margin: 0;">
                                                             Votre plateforme de gestion moderne
@@ -149,7 +149,7 @@ export async function POST(req: Request) {
                                                                         Code de connexion
                                                                     </h2>
                                                                     <p style="font-family: 'Inter', sans-serif; font-size: 16px; color: #64748b; margin: 0; line-height: 1.5;">
-                                                                        Utilisez le code ci-dessous pour vous connecter à votre compte NoviList
+                                                                        Utilisez le code ci-dessous pour vous connecter à votre compte Novalist
                                                                     </p>
                                                                 </td>
                                                             </tr>
@@ -214,7 +214,7 @@ export async function POST(req: Request) {
                                     <tr>
                                         <td align="center" style="border-top: 1px solid #e2e8f0; padding-top: 24px;">
                                             <p style="font-family: 'Inter', sans-serif; font-size: 12px; color: #94a3b8; margin: 0; line-height: 1.5;">
-                                                © 2025 NoviList. Tous droits réservés.<br>
+                                                © 2025 Novalist. Tous droits réservés.<br>
                                                 Cet email a été envoyé à ${email}
                                             </p>
                                         </td>
@@ -235,8 +235,8 @@ export async function POST(req: Request) {
       await t.sendMail({
         to: email,
         from: process.env.SMTP_USER!,
-        subject: `🔐 Code de connexion NoviList`,
-        text: `Bonjour,\n\nVotre code de connexion NoviList est : ${code}\n\nCe code est valide pendant 10 minutes.\n\nSi vous n'avez pas demandé ce code, vous pouvez ignorer cet email.\n\nCordialement,\nL'équipe NoviList`,
+        subject: `🔐 Code de connexion Novalist`,
+        text: `Bonjour,\n\nVotre code de connexion Novalist est : ${code}\n\nCe code est valide pendant 10 minutes.\n\nSi vous n'avez pas demandé ce code, vous pouvez ignorer cet email.\n\nCordialement,\nL'équipe Novalist`,
         html: htmlTemplate,
       });
     } catch (e: unknown) {

@@ -1,4 +1,4 @@
-# Release Notes - NoviList
+# Release Notes - Novalist
 
 ## Version 1.3.0 - Navigation Hierarchique et Interface Optimisee (13 novembre 2025)
 

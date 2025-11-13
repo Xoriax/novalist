@@ -1,12 +1,12 @@
-# NovaList
+# Novalist
 
 > **Une solution complète de gestion d'employés et de données Excel avec authentification sécurisée**
 
-NoviList est une application web moderne qui combine la gestion d'utilisateurs, l'authentification multi-facteurs et le traitement intelligent de fichiers Excel. Conçue pour les entreprises et organisations nécessitant un contrôle précis des accès et une visualisation flexible des données employés.
+Novalist est une application web moderne qui combine la gestion d'utilisateurs, l'authentification multi-facteurs et le traitement intelligent de fichiers Excel. Conçue pour les entreprises et organisations nécessitant un contrôle précis des accès et une visualisation flexible des données employés.
 
 ## Description
 
-NoviList offre une plateforme sécurisée permettant de :
+Novalist offre une plateforme sécurisée permettant de :
 - **Gérer les utilisateurs** avec un système de rôles administrateur/utilisateur
 - **Importer et visualiser des données Excel** avec une interface responsive
 - **Lier les utilisateurs aux employés** pour un accès personnalisé aux données
