@@ -49,12 +49,225 @@ interface AvailableEmployee {
   fullKey: string;
 }
 
+interface RowDetail {
+  [key: string]: unknown;
+}
+
+interface RowDetailsModalProps {
+  row: RowDetail | null;
+  headers: string[];
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+interface TicketLog {
+  id: number;
+  action: string;
+  description: string;
+  date: string;
+  type: 'creation' | 'opening' | 'action' | 'assignment';
+  icon: string;
+}
+
 interface DashboardContentProps {
   user: User | null;
 }
 
 interface EmployeeContentProps {
   employeeKey: string;
+}
+
+function RowDetailsModal({ row, headers, isOpen, onClose }: RowDetailsModalProps) {
+  if (!isOpen || !row) return null;
+
+  // Fonction pour corriger les problèmes d'encodage
+  const fixEncoding = (text: string): string => {
+    if (typeof text !== 'string') return String(text);
+    
+    return text
+      .replace(/Ã©/g, 'é')
+      .replace(/Ã¨/g, 'è')
+      .replace(/Ã /g, 'à')
+      .replace(/Ã¢/g, 'â')
+      .replace(/Ã´/g, 'ô')
+      .replace(/Ã»/g, 'û')
+      .replace(/Ã®/g, 'î')
+      .replace(/Ã§/g, 'ç')
+      .replace(/Ã±/g, 'ñ')
+      .replace(/â€™/g, "'")
+      .replace(/â€œ/g, '"')
+      .replace(/â€/g, '"')
+      .replace(/â€¦/g, '...')
+      .replace(/â€"/g, '–')
+      .replace(/â€"/g, '—')
+      .replace(/�/g, '');
+  };
+
+  // Fonction pour générer les logs du ticket
+  const generateTicketLogs = (): TicketLog[] => {
+    const logs: TicketLog[] = [];
+    let logId = 1;
+
+    // Trouver les colonnes nécessaires
+    const openDateCol = headers.find(h => h.toLowerCase().includes('open date'));
+    const openTimeCol = headers.find(h => h.toLowerCase().includes('open time'));
+    const lastCodeCol = headers.find(h => h.toLowerCase().includes('last code') && !h.toLowerCase().includes('desc') && !h.toLowerCase().includes('date'));
+    const lastCodeDescCol = headers.find(h => h.toLowerCase().includes('last code desc'));
+    const lastCodeDateTimeCol = headers.find(h => h.toLowerCase().includes('last code date time'));
+    const workOrderStatusIdCol = headers.find(h => h.toLowerCase().includes('work order status id'));
+    const workOrderStatusDescCol = headers.find(h => h.toLowerCase().includes('work order status desc'));
+    const employeeIdCol = headers.find(h => h.toLowerCase().includes('employee id'));
+    const employeeNameCol = headers.find(h => h.toLowerCase().includes('employee name'));
+    const assignDateTimeCol = headers.find(h => h.toLowerCase().includes('assign date time'));
+
+    // 1. Log de création du ticket (Open Date)
+    if (openDateCol && row[openDateCol]) {
+      logs.push({
+        id: logId++,
+        action: 'Création du ticket',
+        description: 'Ticket créé dans le système',
+        date: fixEncoding(String(row[openDateCol])),
+        type: 'creation',
+        icon: '📝'
+      });
+    }
+
+    // 2. Log d'ouverture du ticket (Open Time)
+    if (openTimeCol && row[openTimeCol]) {
+      logs.push({
+        id: logId++,
+        action: 'Ouverture du ticket',
+        description: 'Ticket ouvert pour traitement',
+        date: fixEncoding(String(row[openTimeCol])),
+        type: 'opening',
+        icon: '🔓'
+      });
+    }
+
+    // 3. Log de dernière action (Last Code, Last Code Desc, Last Code Date Time)
+    if (lastCodeDateTimeCol && row[lastCodeDateTimeCol]) {
+      const lastCode = lastCodeCol && row[lastCodeCol] ? fixEncoding(String(row[lastCodeCol])) : '';
+      const lastCodeDesc = lastCodeDescCol && row[lastCodeDescCol] ? fixEncoding(String(row[lastCodeDescCol])) : '';
+      
+      logs.push({
+        id: logId++,
+        action: 'Dernière action',
+        description: `${lastCode}${lastCodeDesc ? ` - ${lastCodeDesc}` : ''}`,
+        date: fixEncoding(String(row[lastCodeDateTimeCol])),
+        type: 'action',
+        icon: '⚡'
+      });
+    }
+
+    // 4. Log d'assignation (si assigné à quelqu'un)
+    if (employeeIdCol && employeeNameCol && row[employeeIdCol] && row[employeeNameCol] && assignDateTimeCol && row[assignDateTimeCol]) {
+      const employeeId = fixEncoding(String(row[employeeIdCol]));
+      const employeeName = fixEncoding(String(row[employeeNameCol]));
+      const workOrderStatusId = workOrderStatusIdCol && row[workOrderStatusIdCol] ? fixEncoding(String(row[workOrderStatusIdCol])) : '';
+      const workOrderStatusDesc = workOrderStatusDescCol && row[workOrderStatusDescCol] ? fixEncoding(String(row[workOrderStatusDescCol])) : '';
+      
+      logs.push({
+        id: logId++,
+        action: 'Assignation',
+        description: `Assigné à ${employeeId} - ${employeeName}${workOrderStatusDesc ? ` (${workOrderStatusDesc})` : ''}`,
+        date: fixEncoding(String(row[assignDateTimeCol])),
+        type: 'assignment',
+        icon: '👤'
+      });
+    }
+
+    // Trier les logs par date (plus récent en premier)
+    return logs.filter(log => log.date && log.date !== '-').sort((a, b) => {
+      const dateA = new Date(a.date.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$2/$1/$3'));
+      const dateB = new Date(b.date.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$2/$1/$3'));
+      return dateB.getTime() - dateA.getTime();
+    });
+  };
+
+  const ticketLogs = generateTicketLogs();
+
+  // Trouver les champs clés
+  const workOrderNumber = headers.find(h => 
+    h.toLowerCase().includes('work order number') || h.toLowerCase().includes('workordernumber')
+  );
+  const customerRef = headers.find(h => 
+    h.toLowerCase().includes('customer reference') || h.toLowerCase().includes('customerreference')
+  );
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content row-details-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2 className="modal-title">Détails de la ligne</h2>
+          <div className="modal-subtitle">
+            {workOrderNumber && row[workOrderNumber] && (
+              <span className="detail-badge work-order">
+                Work Order: {fixEncoding(String(row[workOrderNumber]))}
+              </span>
+            )}
+            {customerRef && row[customerRef] && (
+              <span className="detail-badge customer-ref">
+                Ref Client: {fixEncoding(String(row[customerRef]))}
+              </span>
+            )}
+          </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        
+        <div className="modal-body-two-columns">
+          {/* Colonne détails à gauche */}
+          <div className="details-column">
+            <div className="column-header">
+              <h3 className="details-title">Détails</h3>
+            </div>
+            <div className="scrollable-content">
+              <div className="details-grid">
+                {headers.map((header, index) => {
+                  const value = row[header];
+                  const displayValue = value ? fixEncoding(String(value)) : '-';
+                  
+                  return (
+                    <div key={index} className="detail-item">
+                      <div className="detail-label">{fixEncoding(header)}</div>
+                      <div className="detail-value">{displayValue}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Colonne logs à droite */}
+          <div className="logs-column">
+            <div className="column-header">
+              <h3 className="logs-title">Logs</h3>
+            </div>
+            <div className="scrollable-content">
+              <div className="logs-timeline">
+                {ticketLogs.length > 0 ? (
+                  ticketLogs.map((log) => (
+                    <div key={log.id} className={`log-item log-${log.type}`}>
+                      <div className="log-icon">{log.icon}</div>
+                      <div className="log-content">
+                        <div className="log-action">{log.action}</div>
+                        <div className="log-description">{log.description}</div>
+                        <div className="log-date">{log.date}</div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="no-logs">
+                    <div className="no-logs-icon">📋</div>
+                    <p>Aucun historique disponible</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function DashboardContent({ user }: DashboardContentProps) {
@@ -71,10 +284,58 @@ function DashboardContent({ user }: DashboardContentProps) {
   const [uploading, setUploading] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
   const [showColumnSelector, setShowColumnSelector] = useState(false);
+  const [selectedRow, setSelectedRow] = useState<RowDetail | null>(null);
+  const [showRowDetails, setShowRowDetails] = useState(false);
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [filteredData, setFilteredData] = useState<Record<string, unknown>[]>([]);
 
   useEffect(() => {
     fetchExcelData();
   }, []);
+
+  // Effet pour filtrer les données quand le terme de recherche change
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setFilteredData(excelData.data);
+      return;
+    }
+
+    const searchLower = searchTerm.toLowerCase().trim();
+    
+    // Trouver les colonnes Work Order Number et Customer Reference Number
+    const workOrderColumns = excelData.headers.filter(header => 
+      header.toLowerCase().includes('work order number') || 
+      header.toLowerCase().includes('workordernumber') ||
+      header.toLowerCase().includes('work order') ||
+      header.toLowerCase().includes('workorder')
+    );
+    
+    const customerRefColumns = excelData.headers.filter(header => 
+      header.toLowerCase().includes('customer reference') || 
+      header.toLowerCase().includes('customerreference') ||
+      header.toLowerCase().includes('customer ref') ||
+      header.toLowerCase().includes('ref client') ||
+      header.toLowerCase().includes('référence client')
+    );
+
+    const filtered = excelData.data.filter(row => {
+      // Rechercher dans les colonnes Work Order
+      const workOrderMatch = workOrderColumns.some(col => {
+        const value = row[col];
+        return value && String(value).toLowerCase().includes(searchLower);
+      });
+
+      // Rechercher dans les colonnes Customer Reference
+      const customerRefMatch = customerRefColumns.some(col => {
+        const value = row[col];
+        return value && String(value).toLowerCase().includes(searchLower);
+      });
+
+      return workOrderMatch || customerRefMatch;
+    });
+
+    setFilteredData(filtered);
+  }, [searchTerm, excelData.data, excelData.headers]);
 
   // Fonction pour corriger les problèmes d'encodage
   const fixEncoding = (text: string): string => {
@@ -105,6 +366,7 @@ function DashboardContent({ user }: DashboardContentProps) {
       if (response.ok) {
         const data = await response.json();
         setExcelData(data);
+        setFilteredData(data.data || []);
         // Initialiser toutes les colonnes comme visibles par défaut
         if (data.headers && data.headers.length > 0) {
           setVisibleColumns(data.headers);
@@ -135,6 +397,7 @@ function DashboardContent({ user }: DashboardContentProps) {
       if (response.ok) {
         const result = await response.json();
         alert(`Fichier importé avec succès: ${result.rowCount} lignes, ${result.columnCount} colonnes`);
+        setSearchTerm("");
         await fetchExcelData(); // Recharger les données
       } else {
         const error = await response.json();
@@ -162,6 +425,7 @@ function DashboardContent({ user }: DashboardContentProps) {
 
       if (response.ok) {
         alert("Données supprimées avec succès");
+        setSearchTerm("");
         await fetchExcelData();
       } else {
         const error = await response.json();
@@ -189,6 +453,16 @@ function DashboardContent({ user }: DashboardContentProps) {
     } else {
       setVisibleColumns(excelData.headers);
     }
+  };
+
+  const handleRowClick = (row: RowDetail) => {
+    setSelectedRow(row);
+    setShowRowDetails(true);
+  };
+
+  const closeRowDetails = () => {
+    setShowRowDetails(false);
+    setSelectedRow(null);
   };
 
   if (loading) {
@@ -269,7 +543,40 @@ function DashboardContent({ user }: DashboardContentProps) {
         </div>
       )}
 
-
+      {/* Barre de recherche */}
+      {excelData.headers.length > 0 && (
+        <div className="search-section">
+          <div className="search-container">
+            <div className="search-input-wrapper">
+              <span className="search-icon">🔍</span>
+              <input
+                type="text"
+                placeholder="Rechercher par Work Order Number ou Customer Reference Number..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="search-input"
+              />
+              {searchTerm && (
+                <button 
+                  onClick={() => setSearchTerm("")}
+                  className="clear-search-btn"
+                  title="Effacer la recherche"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {searchTerm && (
+              <div className="search-results-info">
+                <span className="results-count">
+                  {filteredData.length} résultat{filteredData.length !== 1 ? 's' : ''} trouvé{filteredData.length !== 1 ? 's' : ''}
+                  {filteredData.length !== excelData.data.length && ` sur ${excelData.data.length} ticket${excelData.data.length !== 1 ? 's' : ''}`}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Tableau des données */}
       {excelData.headers.length > 0 ? (
@@ -284,8 +591,8 @@ function DashboardContent({ user }: DashboardContentProps) {
                 </tr>
               </thead>
               <tbody>
-                {excelData.data.map((row, rowIndex) => (
-                  <tr key={rowIndex}>
+                {filteredData.map((row, rowIndex) => (
+                  <tr key={rowIndex} className="clickable-row" onClick={() => handleRowClick(row)}>
                     {visibleColumns.map((header, colIndex) => (
                       <td key={colIndex}>
                         {fixEncoding(String(row[header] || ""))}
@@ -309,6 +616,14 @@ function DashboardContent({ user }: DashboardContentProps) {
           </p>
         </div>
       )}
+
+      {/* Modal des détails de ligne */}
+      <RowDetailsModal 
+        row={selectedRow}
+        headers={excelData.headers}
+        isOpen={showRowDetails}
+        onClose={closeRowDetails}
+      />
     </div>
   );
 }
@@ -325,6 +640,8 @@ function UnassignedContent() {
   });
   const [loading, setLoading] = useState(true);
   const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
+  const [selectedRow, setSelectedRow] = useState<RowDetail | null>(null);
+  const [showRowDetails, setShowRowDetails] = useState(false);
 
   useEffect(() => {
     fetchExcelData();
@@ -389,6 +706,16 @@ function UnassignedContent() {
 
   const unassignedData = getUnassignedData();
 
+  const handleRowClick = (row: RowDetail) => {
+    setSelectedRow(row);
+    setShowRowDetails(true);
+  };
+
+  const closeRowDetails = () => {
+    setShowRowDetails(false);
+    setSelectedRow(null);
+  };
+
   if (loading) {
     return (
       <div className="content-section">
@@ -423,7 +750,7 @@ function UnassignedContent() {
               </thead>
               <tbody>
                 {unassignedData.map((row, rowIndex) => (
-                  <tr key={rowIndex}>
+                  <tr key={rowIndex} className="clickable-row" onClick={() => handleRowClick(row)}>
                     {visibleColumns.map((header, colIndex) => (
                       <td key={colIndex} className="excel-cell">
                         {String(row[header] || '')}
@@ -442,6 +769,14 @@ function UnassignedContent() {
           <p>Toutes les tâches avec le statut "TBP" ont été attribuées à des employés.</p>
         </div>
       )}
+
+      {/* Modal des détails de ligne */}
+      <RowDetailsModal 
+        row={selectedRow}
+        headers={excelData.headers}
+        isOpen={showRowDetails}
+        onClose={closeRowDetails}
+      />
     </div>
   );
 }
@@ -458,6 +793,8 @@ function EmployeeContent({ employeeKey }: EmployeeContentProps) {
   });
   const [loading, setLoading] = useState(true);
   const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
+  const [selectedRow, setSelectedRow] = useState<RowDetail | null>(null);
+  const [showRowDetails, setShowRowDetails] = useState(false);
 
   useEffect(() => {
     fetchExcelData();
@@ -508,6 +845,16 @@ function EmployeeContent({ employeeKey }: EmployeeContentProps) {
   const employeeData = getEmployeeData();
   const [employeeId, employeeName] = employeeKey.split('-');
 
+  const handleRowClick = (row: RowDetail) => {
+    setSelectedRow(row);
+    setShowRowDetails(true);
+  };
+
+  const closeRowDetails = () => {
+    setShowRowDetails(false);
+    setSelectedRow(null);
+  };
+
   if (loading) {
     return (
       <div className="content-section">
@@ -540,7 +887,7 @@ function EmployeeContent({ employeeKey }: EmployeeContentProps) {
               </thead>
               <tbody>
                 {employeeData.map((row, rowIndex) => (
-                  <tr key={rowIndex}>
+                  <tr key={rowIndex} className="clickable-row" onClick={() => handleRowClick(row)}>
                     {visibleColumns.map((header, colIndex) => (
                       <td key={colIndex}>
                         {String(row[header] || "")}
@@ -559,6 +906,14 @@ function EmployeeContent({ employeeKey }: EmployeeContentProps) {
           <p>Aucune donnée trouvée pour cet employé</p>
         </div>
       )}
+
+      {/* Modal des détails de ligne */}
+      <RowDetailsModal 
+        row={selectedRow}
+        headers={excelData.headers}
+        isOpen={showRowDetails}
+        onClose={closeRowDetails}
+      />
     </div>
   );
 }

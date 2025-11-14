@@ -99,19 +99,97 @@ export async function POST(req: Request) {
     const firstSheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheetName];
     
-    // Convertir en JSON avec options pour compatibilité maximale
+    // Fonction pour détecter le début du tableau de données
+    function findTableStart(sheet: XLSX.WorkSheet): { startRow: number, startCol: number } {
+      const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1:A1');
+      
+      // Convertir toute la feuille en tableau pour analyser
+      const fullData = XLSX.utils.sheet_to_json(sheet, { 
+        header: 1, 
+        raw: true, 
+        range: range,
+        defval: null 
+      }) as unknown[][];
+
+      let bestStartRow = 0;
+      let bestStartCol = 0;
+      let maxConsistentCols = 0;
+
+      // Chercher la ligne avec le plus de colonnes non-vides consécutives
+      for (let row = 0; row < Math.min(fullData.length, 20); row++) { // Limiter la recherche aux 20 premières lignes
+        const rowData = fullData[row] || [];
+        
+        // Trouver le début de colonnes consécutives non-vides
+        let startCol = 0;
+        while (startCol < rowData.length && (rowData[startCol] === null || rowData[startCol] === undefined || String(rowData[startCol]).trim() === '')) {
+          startCol++;
+        }
+        
+        if (startCol >= rowData.length) continue; // Ligne complètement vide
+        
+        // Compter les colonnes consécutives non-vides à partir de startCol
+        let consecutiveCols = 0;
+        for (let col = startCol; col < rowData.length; col++) {
+          const cellValue = rowData[col];
+          if (cellValue !== null && cellValue !== undefined && String(cellValue).trim() !== '') {
+            consecutiveCols++;
+          } else {
+            // Permettre quelques cellules vides au milieu, mais pas plus de 2 consécutives
+            let emptyCells = 0;
+            let tempCol = col;
+            while (tempCol < rowData.length && emptyCells < 3) {
+              const tempValue = rowData[tempCol];
+              if (tempValue === null || tempValue === undefined || String(tempValue).trim() === '') {
+                emptyCells++;
+              } else {
+                break;
+              }
+              tempCol++;
+            }
+            
+            if (emptyCells < 3 && tempCol < rowData.length) {
+              consecutiveCols += emptyCells;
+              col = tempCol - 1; // -1 car le for loop va incrémenter
+            } else {
+              break;
+            }
+          }
+        }
+        
+        // Considérer cette ligne comme candidate si elle a au moins 3 colonnes et plus que le précédent meilleur
+        if (consecutiveCols >= 3 && consecutiveCols > maxConsistentCols) {
+          maxConsistentCols = consecutiveCols;
+          bestStartRow = row;
+          bestStartCol = startCol;
+        }
+      }
+
+      return { startRow: bestStartRow, startCol: bestStartCol };
+    }
+
+    // Détecter le début du tableau
+    const tableStart = findTableStart(worksheet);
+    console.log(`Tableau détecté à partir de la ligne ${tableStart.startRow + 1}, colonne ${String.fromCharCode(65 + tableStart.startCol)}`);
+
+    // Définir la plage à partir du début détecté
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1');
+    const startCell = XLSX.utils.encode_cell({ r: tableStart.startRow, c: tableStart.startCol });
+    const endCell = XLSX.utils.encode_cell({ r: range.e.r, c: range.e.c });
+    const adjustedRange = `${startCell}:${endCell}`;
+
+    // Convertir en JSON avec la plage ajustée
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
       header: 1,
-      raw: false, // Convertir toutes les valeurs en string pour uniformité
-      dateNF: 'yyyy-mm-dd', // Format de date standardisé
-      defval: '' // Valeur par défaut pour les cellules vides
+      raw: true, // Garder les valeurs brutes pour préserver les dates/heures
+      defval: '', // Valeur par défaut pour les cellules vides
+      range: adjustedRange
     });
     
     if (jsonData.length === 0) {
-      return NextResponse.json({ error: "Le fichier est vide" }, { status: 400 });
+      return NextResponse.json({ error: "Le fichier est vide ou aucun tableau détecté" }, { status: 400 });
     }
 
-    // Extraire les en-têtes (première ligne) et nettoyer
+    // Extraire les en-têtes (première ligne du tableau détecté) et nettoyer
     const rawHeaders = jsonData[0] as unknown[];
     const headers = rawHeaders.map((h, index) => {
       let header = String(h || `Colonne ${index + 1}`).trim();
@@ -150,6 +228,18 @@ export async function POST(req: Request) {
             rowObj[header] = '';
           } else if (typeof cellValue === 'number') {
             rowObj[header] = cellValue;
+          } else if (cellValue instanceof Date) {
+            // Conserver les dates avec heure au format complet
+            const date = cellValue;
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            
+            // Format DD/MM/YYYY HH:MM:SS
+            rowObj[header] = `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
           } else {
             // Corriger les problèmes d'encodage UTF-8
             let cleanValue = String(cellValue).trim();

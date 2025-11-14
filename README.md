@@ -31,6 +31,13 @@ Novalist offre une plateforme sécurisée permettant de :
 
 ### Gestion Excel & Employés
 - **Import de fichiers Excel** (.xlsx, .xls, .csv) - Réservé aux administrateurs
+- **Détection automatique de tableaux** - Recognition intelligente du début des données (pas forcément en A1)
+- **Parsing flexible** - Support des fichiers avec en-têtes, logos, ou espaces en début
+- **Barre de recherche avancée** - Recherche par Work Order Number ou Customer Reference Number
+- **Détails de tickets clickables** - Modal détaillé avec informations complètes du ticket
+- **Système de logs automatique** - Historique généré automatiquement depuis les données Excel
+- **Modal à deux colonnes** - Détails à gauche, logs chronologiques à droite
+- **Scroll indépendant** - Navigation séparée dans chaque section du modal
 - **Liaison employé-utilisateur** - Les utilisateurs voient uniquement leur onglet personnel
 - **Onglets dynamiques** - Génération automatique d'onglets par employé depuis Excel
 - **Navigation hiérarchique** - Onglet "Opérateurs" pliable regroupant tous les employés
@@ -158,17 +165,38 @@ Les utilisateurs standard peuvent :
 
 ## Fonctionnalités Excel
 
-### Import de Fichiers
+### Import de Fichiers Intelligent
 - **Formats supportés** : .xlsx (Excel moderne), .xls (Excel legacy), .csv
+- **Détection automatique** : Reconnaissance du début du tableau même si pas en A1
+- **Parsing flexible** : Support des fichiers avec en-têtes, logos, espaces
+- **Algorithme intelligent** : Analyse des 20 premières lignes pour trouver les données
 - **Accès restreint** : Seuls les administrateurs peuvent importer
 - **Validation automatique** : Vérification du format et du contenu
 - **Encodage UTF-8** : Correction automatique des caractères accentués
+
+### Recherche et Navigation
+- **Barre de recherche globale** : Recherche instantanée dans tous les tickets
+- **Critères multiples** : Work Order Number ET Customer Reference Number
+- **Recherche partielle** : Trouve les tickets contenant le terme recherché
+- **Compteur de résultats** : Affichage du nombre de tickets trouvés
+- **Effacement rapide** : Bouton pour vider la recherche instantanément
+- **Recherche temps réel** : Filtrage automatique pendant la saisie
+
+### Détails de Tickets Interactifs
+- **Lignes clickables** : Clic sur n'importe quelle ligne pour voir les détails
+- **Modal à deux colonnes** : Organisation claire des informations
+- **Détails complets** : Tous les champs du ticket affichés
+- **Logs automatiques** : Historique chronologique généré depuis Excel
+- **Types de logs** : Création, ouverture, actions, assignations
+- **Scroll indépendant** : Navigation séparée dans détails et logs
+- **Design responsive** : Adaptation mobile avec colonnes verticales
 
 ### Affichage des Données
 - **Tableau responsive** : S'adapte à toutes les tailles d'écran
 - **En-tête fixe** : Les colonnes restent visibles pendant le scroll
 - **Sélection de colonnes** : Les admins choisissent quelles colonnes afficher
 - **Interface optimisée** : Hauteur adaptée à la fenêtre, pas de scroll global
+- **Filtrage dynamique** : Affichage des résultats de recherche en temps réel
 
 ### Gestion des Colonnes
 - **Panneau de configuration** : Interface intuitive pour sélectionner les colonnes

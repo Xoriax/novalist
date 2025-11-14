@@ -1,5 +1,99 @@
 # Release Notes - Novalist
 
+## Version 1.4.0 - Détection Intelligente et Interaction Avancée (14 novembre 2025)
+
+### Détection automatique de tableaux Excel
+
+**Algorithme de reconnaissance intelligent**
+- **Détection flexible** : Recognition automatique du début du tableau, même si pas en A1
+- **Analyse des 20 premières lignes** : Scanning intelligent pour trouver les vraies données
+- **Critères de validation** : Minimum 3 colonnes consécutives pour considérer une ligne valide
+- **Tolérance aux espaces** : Support jusqu'à 2 cellules vides consécutives au milieu d'une ligne
+- **Plage ajustée automatiquement** : Extraction uniquement des données pertinentes
+- **Logging de débogage** : Information sur la position détectée du tableau
+
+**Support de layouts Excel complexes**
+- **En-têtes de rapports** : Ignore les titres, logos, ou informations préliminaires
+- **Données décalées** : Support des tableaux commençant en B5, C3, etc.
+- **Fichiers legacy** : Compatibilité avec tous types de structures Excel
+- **Validation robuste** : Détection même avec des headers incomplets ou formatage irrégulier
+- **Messages d'erreur améliorés** : Information claire si aucun tableau détecté
+
+### Système de recherche avancé
+
+**Barre de recherche intelligente**
+- **Interface élégante** : Design glassmorphisme avec icône de recherche intégrée
+- **Placeholder informatif** : Guide utilisateur sur les critères de recherche
+- **Bouton d'effacement dynamique** : Apparaît automatiquement avec du contenu
+- **Compteur de résultats** : Affichage "X résultats trouvés sur Y tickets"
+- **Design responsive** : Adaptation mobile avec tailles et espacements optimisés
+
+**Logique de recherche multi-critères**
+- **Détection automatique des colonnes** : Recognition des champs Work Order et Customer Reference
+- **Support de variations** : "work order number", "workordernumber", "customer ref", "ref client"
+- **Recherche insensible à la casse** : Majuscules/minuscules ignorées
+- **Recherche partielle** : Trouve les tickets contenant le terme (pas exact)
+- **Filtrage temps réel** : Mise à jour instantanée pendant la saisie
+- **États gérés** : Réinitialisation lors des imports/suppressions
+
+### Détails de tickets interactifs
+
+**Modal détaillé à deux colonnes**
+- **Structure organisée** : Détails à gauche, logs chronologiques à droite
+- **Headers fixes** : Titres "Détails" et "Logs" restent visibles
+- **Scroll indépendant** : Navigation séparée dans chaque section
+- **Design cohérent** : Intégration parfaite avec le thème sombre
+- **Séparation visuelle** : Bordures et backgrounds distinctifs
+
+**Système de logs automatique**
+- **Génération intelligente** : Logs créés automatiquement depuis les données Excel
+- **Types de logs variés** : Création (vert), ouverture (bleu), action (jaune), assignation (violet)
+- **Timeline chronologique** : Tri automatique par date et heure
+- **Icônes distinctives** : Représentation visuelle pour chaque type d'action
+- **Format uniforme** : Date, action, description structurées
+
+**Responsive design avancé**
+- **Adaptation mobile** : Colonnes deviennent verticales sur petits écrans
+- **Hauteur optimisée** : Sections scrollables avec max-height 40vh sur mobile
+- **Headers adaptés** : Padding réduit et tailles ajustées pour mobile
+- **Bordures responsives** : Séparation horizontale au lieu de verticale
+
+### Améliorations UX/UI
+
+**Interactions tableau optimisées**
+- **Lignes clickables** : Toutes les lignes du tableau sont interactives
+- **Feedback visuel** : Cursor pointer et effets hover sur les lignes
+- **Ouverture modale fluide** : Transition smooth vers les détails
+- **État de chargement** : Gestion des données pendant la génération des logs
+
+**Styles CSS étendus**
+- **Barre de recherche** : Plus de 80 lignes de styles dédiés
+- **Modal responsive** : Système de colonnes flexible avec breakpoints
+- **Scrollbars personnalisées** : Design cohérent pour les zones scrollables
+- **Animations fluides** : Transitions et effets hover coordonnés
+
+### Corrections et optimisations
+
+**Performance de recherche**
+- **Optimisation des filtres** : Recherche efficace sur grandes datasets
+- **Mise à jour conditionnelle** : Re-filtrage uniquement si nécessaire
+- **Gestion mémoire** : Nettoyage automatique des états de recherche
+- **Indexation intelligente** : Pré-traitement des colonnes de recherche
+
+**Stabilité des données**
+- **Validation des champs** : Vérification présence des colonnes critiques
+- **Gestion des cas edge** : Données manquantes ou corrompues
+- **Synchronisation états** : Cohérence entre données filtrées et affichées
+- **Messages d'erreur clairs** : Information utilisateur en cas de problème
+
+**Architecture technique**
+- **États React optimisés** : UseEffect avec dépendances précises
+- **Separation of concerns** : Logiques de recherche et affichage distinctes
+- **TypeScript strict** : Interfaces et types pour tous les nouveaux composants
+- **Code modulaire** : Fonctions réutilisables pour parsing et recherche
+
+---
+
 ## Version 1.3.0 - Navigation Hierarchique et Interface Optimisee (13 novembre 2025)
 
 ### Nouvelle architecture de navigation
