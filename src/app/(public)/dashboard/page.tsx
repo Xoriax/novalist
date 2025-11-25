@@ -60,6 +60,19 @@ interface RowDetailsModalProps {
   onClose: () => void;
 }
 
+interface TicketWithLogs {
+  _id: string;
+  workOrderNumber: string;
+  customerReferenceNumber: string;
+  rawData: Record<string, unknown>;
+  logs: TicketLog[];
+  importedFrom: string;
+  importedAt: string;
+  importedBy: string;
+  rowIndex: number;
+  headers: string[];
+}
+
 interface TicketLog {
   id: number;
   action: string;
@@ -78,7 +91,8 @@ interface EmployeeContentProps {
 }
 
 function RowDetailsModal({ row, headers, isOpen, onClose }: RowDetailsModalProps) {
-  if (!isOpen || !row) return null;
+  const [ticketLogs, setTicketLogs] = useState<TicketLog[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
 
   // Fonction pour corriger les problèmes d'encodage
   const fixEncoding = (text: string): string => {
@@ -102,6 +116,167 @@ function RowDetailsModal({ row, headers, isOpen, onClose }: RowDetailsModalProps
       .replace(/â€"/g, '—')
       .replace(/�/g, '');
   };
+
+  // Récupérer les logs du ticket depuis la base de données
+  useEffect(() => {
+    if (!isOpen || !row) return;
+
+    // Fonction de fallback pour générer les logs
+    const createFallbackLogs = (): TicketLog[] => {
+      const logs: TicketLog[] = [];
+      let logId = 1;
+
+      // Trouver les colonnes nécessaires
+      const openDateCol = headers.find(h => h.toLowerCase().includes('open date'));
+      const openTimeCol = headers.find(h => h.toLowerCase().includes('open time'));
+      const lastCodeCol = headers.find(h => h.toLowerCase().includes('last code') && !h.toLowerCase().includes('desc') && !h.toLowerCase().includes('date'));
+      const lastCodeDescCol = headers.find(h => h.toLowerCase().includes('last code desc'));
+      const lastCodeDateTimeCol = headers.find(h => h.toLowerCase().includes('last code date time'));
+      const workOrderStatusIdCol = headers.find(h => h.toLowerCase().includes('work order status id'));
+      const workOrderStatusDescCol = headers.find(h => h.toLowerCase().includes('work order status desc'));
+      const employeeIdCol = headers.find(h => h.toLowerCase().includes('employee id'));
+      const employeeNameCol = headers.find(h => h.toLowerCase().includes('employee name'));
+      const assignDateTimeCol = headers.find(h => h.toLowerCase().includes('assign date time'));
+
+      // 1. Log de création du ticket (Open Date)
+      if (openDateCol && row[openDateCol]) {
+        logs.push({
+          id: logId++,
+          action: 'Création du ticket',
+          description: 'Ticket créé dans le système',
+          date: fixEncoding(String(row[openDateCol])),
+          type: 'creation',
+          icon: '📝'
+        });
+      }
+
+      // 2. Log d'ouverture du ticket (Open Time)
+      if (openTimeCol && row[openTimeCol]) {
+        logs.push({
+          id: logId++,
+          action: 'Ouverture du ticket',
+          description: 'Ticket ouvert pour traitement',
+          date: fixEncoding(String(row[openTimeCol])),
+          type: 'opening',
+          icon: '🔓'
+        });
+      }
+
+      // 3. Log de dernière action (Last Code, Last Code Desc, Last Code Date Time)
+      if (lastCodeDateTimeCol && row[lastCodeDateTimeCol]) {
+        const lastCode = lastCodeCol && row[lastCodeCol] ? fixEncoding(String(row[lastCodeCol])) : '';
+        const lastCodeDesc = lastCodeDescCol && row[lastCodeDescCol] ? fixEncoding(String(row[lastCodeDescCol])) : '';
+        
+        logs.push({
+          id: logId++,
+          action: 'Dernière action',
+          description: `Code: ${lastCode}${lastCodeDesc ? ` - ${lastCodeDesc}` : ''}`,
+          date: fixEncoding(String(row[lastCodeDateTimeCol])),
+          type: 'action',
+          icon: '⚡'
+        });
+      }
+
+      // 4. Log de statut (Work Order Status)
+      if (workOrderStatusIdCol && row[workOrderStatusIdCol]) {
+        const statusId = fixEncoding(String(row[workOrderStatusIdCol]));
+        const statusDesc = workOrderStatusDescCol && row[workOrderStatusDescCol] ? fixEncoding(String(row[workOrderStatusDescCol])) : '';
+        
+        logs.push({
+          id: logId++,
+          action: 'Changement de statut',
+          description: `Statut: ${statusId}${statusDesc ? ` - ${statusDesc}` : ''}`,
+          date: new Date().toLocaleDateString('fr-FR'),
+          type: 'action',
+          icon: '📊'
+        });
+      }
+
+      // 5. Log d'assignation (Employee)
+      if (employeeIdCol && row[employeeIdCol]) {
+        const employeeId = fixEncoding(String(row[employeeIdCol]));
+        const employeeName = employeeNameCol && row[employeeNameCol] ? fixEncoding(String(row[employeeNameCol])) : '';
+        const assignDate = assignDateTimeCol && row[assignDateTimeCol] ? fixEncoding(String(row[assignDateTimeCol])) : new Date().toLocaleDateString('fr-FR');
+        
+        logs.push({
+          id: logId++,
+          action: 'Assignation',
+          description: `Assigné à: ${employeeId}${employeeName ? ` (${employeeName})` : ''}`,
+          date: assignDate,
+          type: 'assignment',
+          icon: '👤'
+        });
+      }
+
+      // Trier les logs par date (plus récent en premier)
+      logs.sort((a, b) => {
+        try {
+          const dateA = new Date(a.date.split(' ')[0].split('/').reverse().join('-'));
+          const dateB = new Date(b.date.split(' ')[0].split('/').reverse().join('-'));
+          return dateB.getTime() - dateA.getTime();
+        } catch {
+          return 0;
+        }
+      });
+
+      return logs;
+    };
+
+    const fetchTicketLogs = async () => {
+      setLoadingLogs(true);
+      try {
+        // Trouver les identifiants du ticket
+        const workOrderColumns = headers.filter(h => 
+          h.toLowerCase().includes('work order number') || 
+          h.toLowerCase().includes('workordernumber')
+        );
+        const customerRefColumns = headers.filter(h => 
+          h.toLowerCase().includes('customer reference') || 
+          h.toLowerCase().includes('customerreference')
+        );
+
+        const workOrderNumber = workOrderColumns.length > 0 ? String(row[workOrderColumns[0]] || '') : '';
+        const customerReference = customerRefColumns.length > 0 ? String(row[customerRefColumns[0]] || '') : '';
+
+        if (workOrderNumber || customerReference) {
+          const params = new URLSearchParams();
+          params.append('singleTicket', 'true');
+          if (workOrderNumber) {
+            console.log('Recherche avec workOrderNumber:', workOrderNumber);
+            params.append('workOrderNumber', workOrderNumber);
+          }
+          if (customerReference) {
+            console.log('Recherche avec customerReference:', customerReference);
+            params.append('customerReference', customerReference);
+          }
+          
+          console.log('URL finale:', `/api/tickets?${params.toString()}`);
+          const response = await fetch(`/api/tickets?${params.toString()}`);
+
+          if (response.ok) {
+            const { ticket }: { ticket: TicketWithLogs } = await response.json();
+            setTicketLogs(ticket.logs || []);
+          } else {
+            // Fallback: générer les logs à partir des données Excel si pas trouvé en DB
+            setTicketLogs(createFallbackLogs());
+          }
+        } else {
+          // Pas d'identifiants, générer les logs à partir des données Excel
+          setTicketLogs(createFallbackLogs());
+        }
+      } catch (error) {
+        console.error('Erreur lors de la récupération des logs:', error);
+        // Fallback en cas d'erreur
+        setTicketLogs(createFallbackLogs());
+      } finally {
+        setLoadingLogs(false);
+      }
+    };
+
+    fetchTicketLogs();
+  }, [isOpen, row, headers]);
+
+  if (!isOpen || !row) return null;
 
   // Fonction pour générer les logs du ticket
   const generateTicketLogs = (): TicketLog[] => {
@@ -184,7 +359,7 @@ function RowDetailsModal({ row, headers, isOpen, onClose }: RowDetailsModalProps
     });
   };
 
-  const ticketLogs = generateTicketLogs();
+
 
   // Trouver les champs clés
   const workOrderNumber = headers.find(h => 
@@ -200,16 +375,22 @@ function RowDetailsModal({ row, headers, isOpen, onClose }: RowDetailsModalProps
         <div className="modal-header">
           <h2 className="modal-title">Détails de la ligne</h2>
           <div className="modal-subtitle">
-            {workOrderNumber && row[workOrderNumber] && (
-              <span className="detail-badge work-order">
-                Work Order: {fixEncoding(String(row[workOrderNumber]))}
-              </span>
-            )}
-            {customerRef && row[customerRef] && (
-              <span className="detail-badge customer-ref">
-                Ref Client: {fixEncoding(String(row[customerRef]))}
-              </span>
-            )}
+            {(() => {
+              const workOrderValue = workOrderNumber && row[workOrderNumber] ? String(row[workOrderNumber]) : null;
+              return workOrderValue ? (
+                <span className="detail-badge work-order">
+                  Work Order: {fixEncoding(workOrderValue)}
+                </span>
+              ) : null;
+            })()}
+            {(() => {
+              const customerRefValue = customerRef && row[customerRef] ? String(row[customerRef]) : null;
+              return customerRefValue ? (
+                <span className="detail-badge customer-ref">
+                  Ref Client: {fixEncoding(customerRefValue)}
+                </span>
+              ) : null;
+            })()}
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>

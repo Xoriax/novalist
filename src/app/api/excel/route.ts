@@ -3,8 +3,10 @@ import { cookies } from "next/headers";
 import { jwtVerify } from "jose";
 import { dbConnect } from "@/lib/db";
 import ExcelData from "@/models/ExcelData";
+import Ticket from "@/models/Ticket";
 import User from "@/models/User";
 import * as XLSX from "xlsx";
+import { extractTicketIdentifiers, generateTicketLogs } from "@/lib/ticketUtils";
 
 const secret = new TextEncoder().encode(process.env.AUTH_SECRET || "dev-secret");
 
@@ -274,8 +276,9 @@ export async function POST(req: Request) {
 
     // Supprimer les anciennes données
     await ExcelData.deleteMany({});
+    await Ticket.deleteMany({}); // Supprimer aussi les anciens tickets
 
-    // Sauvegarder les nouvelles données
+    // Sauvegarder les nouvelles données Excel (pour compatibilité)
     const excelData = new ExcelData({
       filename: file.name,
       uploadedBy: userEmail,
@@ -287,11 +290,42 @@ export async function POST(req: Request) {
 
     await excelData.save();
 
+    // Créer les tickets individuels avec leurs logs
+    const tickets = [];
+    const batchSize = 100; // Traiter par lots pour optimiser les performances
+
+    for (let i = 0; i < data.length; i += batchSize) {
+      const batch = data.slice(i, i + batchSize);
+      const batchTickets = batch.map((row, batchIndex) => {
+        const actualIndex = i + batchIndex;
+        const { workOrderNumber, customerReferenceNumber } = extractTicketIdentifiers(row, headers);
+        const logs = generateTicketLogs(row, headers);
+
+        return {
+          workOrderNumber,
+          customerReferenceNumber,
+          rawData: row,
+          logs,
+          importedFrom: file.name,
+          importedBy: userEmail,
+          rowIndex: actualIndex,
+          headers
+        };
+      });
+
+      // Insérer le lot de tickets
+      await Ticket.insertMany(batchTickets);
+      tickets.push(...batchTickets);
+    }
+
+    console.log(`Créé ${tickets.length} tickets avec logs automatiques`);
+
     return NextResponse.json({ 
       success: true, 
       message: "Fichier importé avec succès",
       rowCount: data.length,
       columnCount: headers.length,
+      ticketsCreated: tickets.length,
       filename: file.name
     });
 
@@ -318,8 +352,9 @@ export async function DELETE() {
 
     await dbConnect();
     
-    // Supprimer toutes les données Excel
+    // Supprimer toutes les données Excel et tickets
     await ExcelData.deleteMany({});
+    await Ticket.deleteMany({});
 
     return NextResponse.json({ success: true, message: "Données supprimées avec succès" });
 

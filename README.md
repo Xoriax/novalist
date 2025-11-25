@@ -100,19 +100,48 @@ npm run dev
 
 ```
 src/
-├── app/                   # App Router Next.js
-│   ├── (public)/          # Routes publiques
-│   │   ├── dashboard/     # Tableau de bord
-│   │   └── signin/        # Page de connexion
-│   ├── api/               # API Routes
-│   │   ├── admin/         # Endpoints administrateur
-│   │   └── auth/          # Endpoints authentification
-│   ├── globals.css        # Styles globaux
-│   └── layout.tsx         # Layout principal
-├── components/            # Composants réutilisables
-├── lib/                   # Utilitaires (DB, JWT, Email)
-├── models/                # Modèles Mongoose
-└── middleware.ts          # Middleware d'authentification
+├── app/                      # App Router Next.js
+│   ├── (public)/             # Routes publiques
+│   │   ├── dashboard/        # Tableau de bord avec gestion tickets
+│   │   └── signin/           # Page de connexion
+│   ├── admin/                # Pages d'administration
+│   ├── api/                  # API Routes
+│   │   ├── admin/            # Endpoints administrateur
+│   │   │   ├── allowed-emails/ # Gestion emails autorisés
+│   │   │   ├── employee-link/  # Liaison employé-utilisateur
+│   │   │   └── users/        # Gestion utilisateurs et rôles
+│   │   ├── auth/             # Endpoints authentification
+│   │   │   ├── confirm-totp/ # Confirmation TOTP
+│   │   │   ├── logout/       # Déconnexion
+│   │   │   ├── me/           # Informations utilisateur
+│   │   │   ├── request-code/ # Demande code vérification
+│   │   │   ├── setup-totp/   # Configuration TOTP
+│   │   │   ├── verify-code/  # Vérification code email
+│   │   │   └── verify-totp/  # Vérification code TOTP
+│   │   ├── excel/            # Import et gestion fichiers Excel
+│   │   ├── ticket-history/   # Historique des tickets
+│   │   ├── ticket-logs/      # Logs détaillés des tickets
+│   │   └── tickets/          # CRUD tickets et recherche
+│   ├── favicon.ico           # Icône du site
+│   ├── globals.css           # Styles globaux (3700+ lignes)
+│   ├── layout.tsx            # Layout principal avec métadonnées
+│   ├── page.module.css       # Styles page d'accueil
+│   └── page.tsx              # Page d'accueil
+├── components/               # Composants réutilisables
+│   ├── EmailSignInForm.tsx   # Formulaire connexion par email
+│   ├── TotpSetupPanel.tsx    # Configuration authentification TOTP
+│   └── VerifyEmailCodeForm.tsx # Vérification code email
+├── lib/                      # Utilitaires et helpers
+│   ├── db.ts                 # Connexion MongoDB
+│   ├── jwt.ts                # Gestion tokens JWT
+│   ├── mailer.ts             # Envoi d'emails
+│   └── ticketUtils.ts        # Utilitaires tickets et logs
+├── models/                   # Modèles Mongoose MongoDB
+│   ├── AllowedEmail.ts       # Emails autorisés pour inscription
+│   ├── LoginToken.ts         # Tokens temporaires de connexion
+│   ├── Ticket.ts             # Tickets avec logs intégrés
+│   └── User.ts               # Utilisateurs avec liaison employé
+└── middleware.ts             # Middleware d'authentification routes
 ```
 
 ## API Endpoints
@@ -140,6 +169,12 @@ src/
 - `GET /api/excel` - Récupérer les données Excel stockées
 - `POST /api/excel` - Importer un fichier Excel (admin uniquement)
 - `DELETE /api/excel` - Supprimer toutes les données Excel (admin uniquement)
+
+### Tickets
+- `GET /api/tickets` - Récupérer tickets avec recherche et pagination
+- `GET /api/tickets?singleTicket=true&workOrderNumber=XXX` - Récupérer ticket spécifique
+- `GET /api/ticket-logs` - Récupérer logs d'un ticket
+- `GET /api/ticket-history` - Récupérer historique complet d'un ticket
 
 ## Fonctionnalités d'administration
 
@@ -214,10 +249,14 @@ Les utilisateurs standard peuvent :
 
 ### Configuration de la base de données
 L'application utilise MongoDB avec Mongoose. Les modèles incluent :
-- **User** (utilisateurs avec rôles et authentification)
+- **User** (utilisateurs avec rôles, authentification et liaison employé)
 - **AllowedEmail** (emails autorisés pour l'inscription)
 - **LoginToken** (tokens de vérification temporaires)
-- **ExcelData** (stockage des fichiers Excel importés avec métadonnées)
+- **Ticket** (tickets individuels avec logs intégrés et métadonnées)
+  - Stockage des données brutes Excel
+  - Génération automatique des logs chronologiques
+  - Indexation pour recherche rapide par Work Order et Customer Reference
+  - Métadonnées d'import (fichier, utilisateur, date)
 
 ## Sécurité
 
