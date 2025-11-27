@@ -809,6 +809,109 @@ function DashboardContent({ user }: DashboardContentProps) {
   );
 }
 
+function ClosedContent() {
+  const [closedTickets, setClosedTickets] = useState<TicketWithLogs[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
+  const [selectedRow, setSelectedRow] = useState<RowDetail | null>(null);
+  const [showRowDetails, setShowRowDetails] = useState(false);
+
+  useEffect(() => {
+    fetchClosedTickets();
+  }, []);
+
+  const fetchClosedTickets = async () => {
+    try {
+      // Récupérer tous les tickets fermés (limit=10000 pour avoir tous les tickets)
+      const response = await fetch("/api/tickets?status=closed&limit=10000");
+      if (response.ok) {
+        const data = await response.json();
+        setClosedTickets(data.tickets || []);
+        if (data.tickets && data.tickets.length > 0 && data.tickets[0].headers) {
+          setVisibleColumns(data.tickets[0].headers);
+        }
+      }
+    } catch (error) {
+      console.error("Erreur lors de la récupération des tickets fermés:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRowClick = (row: RowDetail) => {
+    setSelectedRow(row);
+    setShowRowDetails(true);
+  };
+
+  const closeRowDetails = () => {
+    setShowRowDetails(false);
+    setSelectedRow(null);
+  };
+
+  if (loading) {
+    return (
+      <div className="content-section">
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Chargement des tickets fermés...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="content-section">
+      <div className="section-header">
+        <h2 className="section-title">Tickets Fermés</h2>
+        <p className="section-subtitle">Tickets absents du dernier import • {closedTickets.length} ticket(s)</p>
+      </div>
+
+      {closedTickets.length > 0 ? (
+        <div className="excel-table-container">
+          <div className="excel-table-wrapper">
+            <table className="excel-table">
+              <thead>
+                <tr>
+                  {visibleColumns.map((header, index) => (
+                    <th key={index} className="excel-header">
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {closedTickets.map((ticket, rowIndex) => (
+                  <tr key={rowIndex} className="clickable-row" onClick={() => handleRowClick(ticket.rawData)}>
+                    {visibleColumns.map((header, colIndex) => (
+                      <td key={colIndex} className="excel-cell">
+                        {String(ticket.rawData[header] || '')}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className="no-data">
+          <div className="no-data-icon">🔒</div>
+          <h3>Aucun ticket fermé</h3>
+          <p>Tous les tickets sont présents dans le dernier import.</p>
+        </div>
+      )}
+
+      {/* Modal des détails de ligne */}
+      <RowDetailsModal 
+        row={selectedRow}
+        headers={visibleColumns}
+        isOpen={showRowDetails}
+        onClose={closeRowDetails}
+      />
+    </div>
+  );
+}
+
 function UnassignedContent() {
   const [excelData, setExcelData] = useState<ExcelData>({
     headers: [],
@@ -1793,6 +1896,7 @@ export default function Dashboard() {
 
   const tabs = [
     { id: "dashboard", label: "Tableau de bord", icon: "📊" },
+    { id: "closed", label: "Fermé", icon: "🔒" },
     { id: "unassigned", label: "Non attribué", icon: "❓" }
   ];
   
@@ -1824,6 +1928,8 @@ export default function Dashboard() {
     switch (activeTab) {
       case "dashboard":
         return <DashboardContent user={user} />;
+      case "closed":
+        return <ClosedContent />;
       case "unassigned":
         return <UnassignedContent />;
       case "admin":

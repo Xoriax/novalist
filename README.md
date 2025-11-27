@@ -29,15 +29,23 @@ Novalist offre une plateforme sécurisée permettant de :
 - Gestion des emails autorisés pour l'inscription
 - Synchronisation automatique entre utilisateurs et emails autorisés
 
-### Gestion Excel & Employés
-- **Import de fichiers Excel** (.xlsx, .xls, .csv) - Réservé aux administrateurs
+### Gestion des Tickets Excel
+- **Import incrémental** - Ajout/mise à jour sans suppression des anciens tickets
+- **Détection des changements** - Comparaison intelligente ligne par ligne
+- **Logs spécifiques** - Uniquement pour status, assignation, pièces et actions
+- **Système de tickets individuels** - Chaque ligne Excel devient un ticket en base de données
+- **Onglet "Fermé"** - Affichage dédié des tickets inactifs (absents du dernier import)
+- **Gestion du cycle de vie** - Tickets actifs, fermés, et réactivation automatique
 - **Détection automatique de tableaux** - Recognition intelligente du début des données (pas forcément en A1)
 - **Parsing flexible** - Support des fichiers avec en-têtes, logos, ou espaces en début
 - **Barre de recherche avancée** - Recherche par Work Order Number ou Customer Reference Number
 - **Détails de tickets clickables** - Modal détaillé avec informations complètes du ticket
-- **Système de logs automatique** - Historique généré automatiquement depuis les données Excel
+- **Système de logs chronologiques** - Historique généré automatiquement, tri du plus récent au plus ancien
 - **Modal à deux colonnes** - Détails à gauche, logs chronologiques à droite
 - **Scroll indépendant** - Navigation séparée dans chaque section du modal
+
+### Gestion Excel & Employés
+- **Import de fichiers Excel** (.xlsx, .xls, .csv) - Réservé aux administrateurs
 - **Liaison employé-utilisateur** - Les utilisateurs voient uniquement leur onglet personnel
 - **Onglets dynamiques** - Génération automatique d'onglets par employé depuis Excel
 - **Navigation hiérarchique** - Onglet "Opérateurs" pliable regroupant tous les employés
@@ -48,6 +56,7 @@ Novalist offre une plateforme sécurisée permettant de :
 - **Correction automatique de l'encodage** UTF-8 (caractères accentués français)
 - **Tableau responsive** avec en-tête fixe et scroll optimisé
 - **Parsing intelligent** des données avec nettoyage automatique
+- **Pagination augmentée** - Affichage jusqu'à 10,000 tickets par onglet
 
 ### Interface Utilisateur
 - Design responsive avec glassmorphisme

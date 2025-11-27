@@ -60,39 +60,23 @@ export const generateTicketLogs = (row: Record<string, unknown>, headers: string
     return cleaned;
   };
 
-  // 1. Log de création du ticket (Open Date)
-  const openDateCol = headers.find(h => h.toLowerCase() === 'open date');
-  if (openDateCol && row[openDateCol]) {
-    const openDate = formatDate(String(row[openDateCol]));
-    if (openDate) {
+  // 1. Log de création du ticket (Open Time au lieu de Open Date)
+  const openTimeCol = headers.find(h => h.toLowerCase() === 'open time');
+  if (openTimeCol && row[openTimeCol]) {
+    const openTime = formatDate(String(row[openTimeCol]));
+    if (openTime) {
       logs.push({
         id: logId++,
         action: 'Création du ticket',
         description: 'Ticket créé dans le système',
-        date: openDate,
+        date: openTime,
         type: 'creation',
         icon: '🎫'
       });
     }
   }
 
-  // 2. Log d'ouverture du ticket (Open Time - si différent de Open Date)
-  const openTimeCol = headers.find(h => h.toLowerCase() === 'open time');
-  if (openTimeCol && row[openTimeCol]) {
-    const openTime = formatDate(String(row[openTimeCol]));
-    if (openTime && openTime !== (row[openDateCol || ''] || '')) {
-      logs.push({
-        id: logId++,
-        action: 'Ouverture du ticket',
-        description: 'Ticket ouvert pour traitement',
-        date: openTime,
-        type: 'opening',
-        icon: '🔓'
-      });
-    }
-  }
-
-  // 3. Log de dernière action (Last Code)
+  // 2. Log de dernière action (Last Code)
   const lastCodeCol = headers.find(h => h.toLowerCase() === 'last code');
   const lastCodeDescCol = headers.find(h => h.toLowerCase() === 'last code desc');
   const lastCodeDateTimeCol = headers.find(h => h.toLowerCase() === 'last code date time');
@@ -133,11 +117,16 @@ export const generateTicketLogs = (row: Record<string, unknown>, headers: string
       ? fixEncoding(String(row[workOrderStatusDescCol])) 
       : '';
     
-    // Utiliser la date d'assignation ou la date actuelle
+    // Utiliser la date d'assignation si disponible, sinon la date de last action
     const assignDateTimeCol = headers.find(h => h.toLowerCase() === 'assign date time');
-    const statusDate = assignDateTimeCol && row[assignDateTimeCol] 
-      ? formatDate(String(row[assignDateTimeCol]))
-      : new Date().toLocaleDateString('fr-FR');
+    let statusDate = '';
+    
+    if (assignDateTimeCol && row[assignDateTimeCol]) {
+      statusDate = formatDate(String(row[assignDateTimeCol]));
+    } else if (lastCodeDateTimeCol && row[lastCodeDateTimeCol]) {
+      // Si pas d'assignation, utiliser la date de last action
+      statusDate = formatDate(String(row[lastCodeDateTimeCol]));
+    }
     
     if (statusDate) {
       logs.push({
@@ -161,16 +150,16 @@ export const generateTicketLogs = (row: Record<string, unknown>, headers: string
     const employeeName = employeeNameCol && row[employeeNameCol] 
       ? fixEncoding(String(row[employeeNameCol])) 
       : '';
-    const assignDate = formatDate(String(row[assignDateTimeCol]));
+    const assignDateTime = formatDate(String(row[assignDateTimeCol]));
     
-    if (employeeId && assignDate) {
+    if (employeeId && assignDateTime) {
       logs.push({
         id: logId++,
         action: 'Assignation',
         description: employeeName 
           ? `Assigné à: ${employeeName} (${employeeId})`
           : `Assigné à: ${employeeId}`,
-        date: assignDate,
+        date: assignDateTime,
         type: 'assignment',
         icon: '👤'
       });

@@ -223,6 +223,24 @@ export async function POST(req: Request) {
       .map((row) => {
         const rowArray = row as unknown[];
         const rowObj: Record<string, unknown> = {};
+        let openTimeValue = '';
+        
+        headers.forEach((header, index) => {
+          const cellValue = rowArray[index];
+          
+          // Capturer Open Time pour l'utiliser dans Open Date
+          if (header.toLowerCase() === 'open time' && cellValue instanceof Date) {
+            const date = cellValue;
+            const day = String(date.getUTCDate()).padStart(2, '0');
+            const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+            const year = date.getUTCFullYear();
+            const hours = String(date.getUTCHours()).padStart(2, '0');
+            const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+            const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+            openTimeValue = `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+          }
+        });
+        
         headers.forEach((header, index) => {
           const cellValue = rowArray[index];
           // Nettoyer et formater les valeurs avec gestion de l'encodage
@@ -231,17 +249,23 @@ export async function POST(req: Request) {
           } else if (typeof cellValue === 'number') {
             rowObj[header] = cellValue;
           } else if (cellValue instanceof Date) {
-            // Conserver les dates avec heure au format complet
-            const date = cellValue;
-            const day = String(date.getDate()).padStart(2, '0');
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const year = date.getFullYear();
-            const hours = String(date.getHours()).padStart(2, '0');
-            const minutes = String(date.getMinutes()).padStart(2, '0');
-            const seconds = String(date.getSeconds()).padStart(2, '0');
-            
-            // Format DD/MM/YYYY HH:MM:SS
-            rowObj[header] = `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+            // Si c'est Open Date, extraire uniquement la date de Open Time
+            if (header.toLowerCase() === 'open date' && openTimeValue) {
+              const [datePart] = openTimeValue.split(' ');
+              rowObj[header] = datePart;
+            } else {
+              // Conserver les dates avec heure au format complet
+              const date = cellValue;
+              const day = String(date.getUTCDate()).padStart(2, '0');
+              const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+              const year = date.getUTCFullYear();
+              const hours = String(date.getUTCHours()).padStart(2, '0');
+              const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+              const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+              
+              // Format DD/MM/YYYY HH:MM:SS
+              rowObj[header] = `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+            }
           } else {
             // Corriger les problèmes d'encodage UTF-8
             let cleanValue = String(cellValue).trim();
@@ -274,58 +298,288 @@ export async function POST(req: Request) {
     const user = await User.findById(payload.uid).lean() as { email?: string } | null;
     const userEmail = user?.email || "unknown";
 
-    // Supprimer les anciennes données
-    await ExcelData.deleteMany({});
-    await Ticket.deleteMany({}); // Supprimer aussi les anciens tickets
-
-    // Sauvegarder les nouvelles données Excel (pour compatibilité)
-    const excelData = new ExcelData({
-      filename: file.name,
-      uploadedBy: userEmail,
-      headers: headers,
-      data: data,
-      rowCount: data.length,
-      columnCount: headers.length
+    // Collecter tous les Customer Reference Numbers du nouveau fichier
+    const customerRefsInFile = new Set<string>();
+    data.forEach(row => {
+      const { customerReferenceNumber } = extractTicketIdentifiers(row, headers);
+      if (customerReferenceNumber) {
+        customerRefsInFile.add(customerReferenceNumber);
+      }
     });
 
-    await excelData.save();
-
-    // Créer les tickets individuels avec leurs logs
-    const tickets = [];
+    // Créer les tickets individuels avec leurs logs (sans supprimer les anciens)
+    const newTickets = [];
+    const updatedTickets = [];
+    const skippedTickets = [];
     const batchSize = 100; // Traiter par lots pour optimiser les performances
 
     for (let i = 0; i < data.length; i += batchSize) {
       const batch = data.slice(i, i + batchSize);
-      const batchTickets = batch.map((row, batchIndex) => {
+      
+      for (let batchIndex = 0; batchIndex < batch.length; batchIndex++) {
+        const row = batch[batchIndex];
         const actualIndex = i + batchIndex;
         const { workOrderNumber, customerReferenceNumber } = extractTicketIdentifiers(row, headers);
-        const logs = generateTicketLogs(row, headers);
+        
+        // Vérifier si un ticket avec ce Customer Reference Number existe déjà
+        const existingTicket = await Ticket.findOne({ customerReferenceNumber });
+        
+        if (!existingTicket) {
+          // Le ticket n'existe pas, on peut l'ajouter
+          const logs = generateTicketLogs(row, headers);
 
-        return {
-          workOrderNumber,
-          customerReferenceNumber,
-          rawData: row,
-          logs,
-          importedFrom: file.name,
-          importedBy: userEmail,
-          rowIndex: actualIndex,
-          headers
-        };
-      });
+          const newTicket = {
+            workOrderNumber,
+            customerReferenceNumber,
+            rawData: row,
+            logs,
+            importedFrom: file.name,
+            importedBy: userEmail,
+            rowIndex: actualIndex,
+            headers,
+            status: 'active'
+          };
 
-      // Insérer le lot de tickets
-      await Ticket.insertMany(batchTickets);
-      tickets.push(...batchTickets);
+          await Ticket.create(newTicket);
+          newTickets.push(newTicket);
+        } else {
+          // Le ticket existe déjà, vérifier si les données sont identiques
+          const existingData = JSON.stringify(existingTicket.rawData);
+          const newData = JSON.stringify(row);
+          
+          if (existingData === newData) {
+            // Les données sont identiques, aucune modification mais marquer comme actif
+            console.log(`⚠️ Customer Reference Number "${customerReferenceNumber}" (Work Order: ${workOrderNumber}) existe déjà sans modification - Import ignoré`);
+            skippedTickets.push({ customerReferenceNumber, workOrderNumber, reason: 'identical' });
+            // Marquer comme actif car présent dans le fichier
+            existingTicket.status = 'active';
+            await existingTicket.save();
+          } else {
+            // Les données sont différentes, détecter les changements et mettre à jour
+            console.log(`🔄 Customer Reference Number "${customerReferenceNumber}" (Work Order: ${workOrderNumber}) existe avec des modifications - Mise à jour en cours`);
+            
+            const newLogs: Array<{
+              id: number;
+              date: string;
+              type: 'creation' | 'opening' | 'action' | 'assignment';
+              description: string;
+              action: string;
+              icon: string;
+              field?: string;
+              oldValue?: string;
+              newValue?: string;
+            }> = [];
+            const currentDate = new Date().toLocaleString('fr-FR', { 
+              day: '2-digit', 
+              month: '2-digit', 
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit'
+            });
+
+            // Comparer chaque champ pour détecter les changements spécifiques
+            const statusChanges: { id?: string; desc?: string; oldId?: string; oldDesc?: string } = {};
+            let lastCode = '';
+            let lastCodeDesc = '';
+            let lastActionDate = '';
+            let employeeName = '';
+            let employeeId = '';
+            let assignDateTime = '';
+            
+            headers.forEach(header => {
+              const headerLower = header.toLowerCase();
+              const oldValue = existingTicket.rawData[header];
+              const newValue = row[header];
+
+              // Ignorer les champs vides ou identiques
+              if (oldValue === newValue) return;
+              if (!oldValue && !newValue) return;
+
+              // Collecter les informations de statut
+              if (headerLower === 'work order status id') {
+                statusChanges.oldId = String(oldValue || '');
+                statusChanges.id = String(newValue || '');
+              } else if (headerLower === 'work order status desc') {
+                statusChanges.oldDesc = String(oldValue || '');
+                statusChanges.desc = String(newValue || '');
+              }
+              // Collecter les informations d'employé
+              else if (headerLower === 'employee name') {
+                employeeName = String(newValue || '');
+              } else if (headerLower === 'employee id') {
+                employeeId = String(newValue || '');
+              } else if (headerLower === 'assign date time') {
+                assignDateTime = String(newValue || '');
+              }
+              // Collecter last action
+              else if (headerLower === 'last code') {
+                if (newValue) lastCode = String(newValue);
+              } else if (headerLower === 'last code desc') {
+                if (newValue) lastCodeDesc = String(newValue);
+              } else if (headerLower === 'last code date time') {
+                lastActionDate = String(newValue || '');
+              }
+              // 3. Disponibilité des pièces
+              else if (headerLower.includes('part') && (headerLower.includes('available') || headerLower.includes('disponible'))) {
+                if (oldValue !== newValue && newValue) {
+                  newLogs.push({
+                    id: existingTicket.logs.length + newLogs.length + 1,
+                    date: currentDate,
+                    type: 'action',
+                    action: 'Disponibilité des pièces',
+                    description: `${oldValue || 'N/A'} → ${newValue}`,
+                    icon: '🔧',
+                    field: header,
+                    oldValue: String(oldValue || ''),
+                    newValue: String(newValue || '')
+                  });
+                  console.log(`  🔧 Pièces : "${oldValue}" → "${newValue}"`);
+                }
+              }
+            });
+
+            // 1. Ajouter le log de changement de statut unique (regroupé)
+            if (statusChanges.id && (statusChanges.id !== statusChanges.oldId || statusChanges.desc !== statusChanges.oldDesc)) {
+              const oldStatus = statusChanges.oldDesc ? `${statusChanges.oldId} - ${statusChanges.oldDesc}` : statusChanges.oldId || 'N/A';
+              const newStatus = statusChanges.desc ? `${statusChanges.id} - ${statusChanges.desc}` : statusChanges.id;
+              
+              // Si le statut passe de TBP à un statut assigné, utiliser Assign Date Time
+              const statusDate = (statusChanges.oldId?.includes('TBP') && assignDateTime) 
+                ? assignDateTime 
+                : currentDate;
+              
+              newLogs.push({
+                id: existingTicket.logs.length + newLogs.length + 1,
+                date: statusDate,
+                type: 'action',
+                action: 'Changement de statut',
+                description: `${oldStatus} → ${newStatus}`,
+                icon: '📊',
+                field: 'Work Order Status',
+                oldValue: oldStatus,
+                newValue: newStatus
+              });
+              console.log(`  📊 Statut modifié : "${oldStatus}" → "${newStatus}"`);
+            }
+
+            // 2. Ajouter le log d'assignation avec Employee Name, ID et Assign Date Time
+            if (employeeName && employeeId) {
+              newLogs.push({
+                id: existingTicket.logs.length + newLogs.length + 1,
+                date: assignDateTime || currentDate,
+                type: 'assignment',
+                action: 'Assignation',
+                description: `Assigné à: ${employeeName} (${employeeId})`,
+                icon: '👤',
+                field: 'Employee',
+                oldValue: '',
+                newValue: `${employeeName} (${employeeId})`
+              });
+              console.log(`  👤 Assigné à : "${employeeName} (${employeeId})" le ${assignDateTime || currentDate}`);
+            }
+
+            // 4. Ajouter le log de dernière action avec Last Code Date Time
+            if (lastCode || lastCodeDesc) {
+              let description = 'Action effectuée';
+              if (lastCode && lastCodeDesc) {
+                description = `${lastCode} - ${lastCodeDesc}`;
+              } else if (lastCode) {
+                description = `Code action: ${lastCode}`;
+              } else if (lastCodeDesc) {
+                description = lastCodeDesc;
+              }
+              
+              newLogs.push({
+                id: existingTicket.logs.length + newLogs.length + 1,
+                date: lastActionDate || currentDate,
+                type: 'action',
+                action: 'Dernière action',
+                description: description,
+                icon: '⚡',
+                field: 'Last Action',
+                oldValue: '',
+                newValue: description
+              });
+              console.log(`  ⚡ Action : "${description}" le ${lastActionDate || currentDate}`);
+            }
+
+            // Mettre à jour le ticket avec les nouvelles données et les nouveaux logs
+            if (newLogs.length > 0) {
+              existingTicket.rawData = row;
+              // Ajouter les nouveaux logs au début pour avoir les plus récents en premier
+              existingTicket.logs.unshift(...newLogs);
+              existingTicket.importedFrom = file.name;
+              existingTicket.importedBy = userEmail;
+              existingTicket.headers = headers;
+              existingTicket.status = 'active'; // Réactiver le ticket s'il était fermé
+              
+              await existingTicket.save();
+              updatedTickets.push({ 
+                customerReferenceNumber, 
+                workOrderNumber, 
+                changesCount: newLogs.length 
+              });
+              console.log(`  ✅ ${newLogs.length} modification(s) enregistrée(s)`);
+            } else {
+              // Même si pas de changements dans les logs, marquer comme actif
+              existingTicket.status = 'active';
+              await existingTicket.save();
+            }
+          }
+        }
+      }
     }
 
-    console.log(`Créé ${tickets.length} tickets avec logs automatiques`);
+    // Marquer comme fermés les tickets qui ne sont plus dans le fichier
+    console.log(`\n📋 Customer Reference Numbers dans le nouveau fichier: ${customerRefsInFile.size}`);
+    console.log(`Customer Refs: ${Array.from(customerRefsInFile).slice(0, 5).join(', ')}...`);
+    
+    // Compter les tickets actifs avant fermeture
+    const activeTicketsBeforeClose = await Ticket.countDocuments({ status: 'active' });
+    console.log(`Tickets actifs avant fermeture: ${activeTicketsBeforeClose}`);
+    
+    const closedTicketsResult = await Ticket.updateMany(
+      { 
+        customerReferenceNumber: { $nin: Array.from(customerRefsInFile) },
+        status: 'active'
+      },
+      { 
+        $set: { status: 'closed' }
+      }
+    );
+    
+    console.log(`🔒 Tickets fermés: ${closedTicketsResult.modifiedCount}`);
+
+    console.log(`Créé ${newTickets.length} nouveaux tickets, ${updatedTickets.length} tickets mis à jour, ${skippedTickets.length} tickets ignorés, ${closedTicketsResult.modifiedCount} tickets fermés`);
+
+    // Mettre à jour ExcelData avec les données cumulées (seulement les tickets actifs)
+    const allTickets = await Ticket.find({ status: 'active' }).lean();
+    const allData = allTickets.map(ticket => ticket.rawData);
+    const allHeaders = headers; // On garde les headers du dernier import
+    
+    await ExcelData.deleteMany({});
+    const excelData = new ExcelData({
+      filename: file.name,
+      uploadedBy: userEmail,
+      headers: allHeaders,
+      data: allData,
+      rowCount: allData.length,
+      columnCount: allHeaders.length
+    });
+
+    await excelData.save();
 
     return NextResponse.json({ 
       success: true, 
-      message: "Fichier importé avec succès",
+      message: `Fichier importé avec succès. ${newTickets.length} nouveaux tickets ajoutés, ${updatedTickets.length} tickets mis à jour, ${skippedTickets.length} tickets ignorés, ${closedTicketsResult.modifiedCount} tickets fermés.`,
       rowCount: data.length,
       columnCount: headers.length,
-      ticketsCreated: tickets.length,
+      ticketsCreated: newTickets.length,
+      ticketsUpdated: updatedTickets.length,
+      ticketsSkipped: skippedTickets.length,
+      ticketsClosed: closedTicketsResult.modifiedCount,
+      totalTickets: allTickets.length,
       filename: file.name
     });
 

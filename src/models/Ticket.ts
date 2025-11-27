@@ -82,6 +82,13 @@ const TicketSchema = new mongoose.Schema({
     type: String,
     required: true,
   }],
+  
+  // Statut du ticket (active ou closed)
+  status: {
+    type: String,
+    enum: ['active', 'closed'],
+    default: 'active',
+  },
 });
 
 // Index composé pour recherche rapide

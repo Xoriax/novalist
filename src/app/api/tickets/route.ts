@@ -22,6 +22,7 @@ export async function GET(req: Request) {
     const workOrderNumber = searchParams.get('workOrderNumber');
     const customerReference = searchParams.get('customerReference'); // Paramètre d'entrée
     const search = searchParams.get('search');
+    const status = searchParams.get('status'); // Nouveau paramètre pour filtrer par statut
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
     const skip = (page - 1) * limit;
@@ -114,6 +115,11 @@ export async function GET(req: Request) {
 
     // Sinon, logique de recherche normale avec pagination
     const query: Record<string, unknown> = {};
+
+    // Filtre par statut si spécifié
+    if (status) {
+      query.status = status;
+    }
 
     if (search) {
       // Recherche globale dans workOrderNumber et customerReferenceNumber
