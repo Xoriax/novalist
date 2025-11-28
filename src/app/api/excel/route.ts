@@ -420,23 +420,7 @@ export async function POST(req: Request) {
               } else if (headerLower === 'last code date time') {
                 lastActionDate = String(newValue || '');
               }
-              // 3. Disponibilité des pièces
-              else if (headerLower.includes('part') && (headerLower.includes('available') || headerLower.includes('disponible'))) {
-                if (oldValue !== newValue && newValue) {
-                  newLogs.push({
-                    id: existingTicket.logs.length + newLogs.length + 1,
-                    date: currentDate,
-                    type: 'action',
-                    action: 'Disponibilité des pièces',
-                    description: `${oldValue || 'N/A'} → ${newValue}`,
-                    icon: '🔧',
-                    field: header,
-                    oldValue: String(oldValue || ''),
-                    newValue: String(newValue || '')
-                  });
-                  console.log(`  🔧 Pièces : "${oldValue}" → "${newValue}"`);
-                }
-              }
+              // Ignorer les changements de disponibilité des pièces (pas de log)
             });
 
             // 1. Ajouter le log de changement de statut unique (regroupé)

@@ -166,25 +166,7 @@ export const generateTicketLogs = (row: Record<string, unknown>, headers: string
     }
   }
 
-  // 6. Log d'ETA des pièces (si disponible)
-  const partETACol = headers.find(h => h.toLowerCase() === 'part eta date time');
-  const partAvailableCol = headers.find(h => h.toLowerCase() === 'part available');
-  
-  if (partETACol && row[partETACol] && partAvailableCol && row[partAvailableCol]) {
-    const etaDate = formatDate(String(row[partETACol]));
-    const partAvailable = String(row[partAvailableCol]).toLowerCase();
-    
-    if (etaDate && partAvailable === 'yes') {
-      logs.push({
-        id: logId++,
-        action: 'Pièces disponibles',
-        description: 'Pièces nécessaires disponibles pour intervention',
-        date: etaDate,
-        type: 'action',
-        icon: '🔧'
-      });
-    }
-  }
+  // Log d'ETA des pièces supprimé - ne plus générer de logs pour les pièces disponibles
 
   // Filtrer les logs vides et trier par date (plus récent en premier)
   const validLogs = logs.filter(log => log.date && log.date.trim() !== '');

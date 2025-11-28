@@ -58,6 +58,10 @@ interface RowDetailsModalProps {
   headers: string[];
   isOpen: boolean;
   onClose: () => void;
+  canSelfAssign?: boolean;  // Si l'utilisateur peut récupérer le ticket
+  onSelfAssign?: () => void;  // Callback après récupération réussie
+  user?: User | null;  // Informations de l'utilisateur
+  onNotification?: (type: 'success' | 'error' | 'info', title: string, message: string) => void;  // Afficher une notification
 }
 
 interface TicketWithLogs {
@@ -84,15 +88,18 @@ interface TicketLog {
 
 interface DashboardContentProps {
   user: User | null;
+  excelData?: ExcelData;
+  loading?: boolean;
 }
 
 interface EmployeeContentProps {
   employeeKey: string;
 }
 
-function RowDetailsModal({ row, headers, isOpen, onClose }: RowDetailsModalProps) {
+function RowDetailsModal({ row, headers, isOpen, onClose, canSelfAssign, onSelfAssign, user, onNotification }: RowDetailsModalProps) {
   const [ticketLogs, setTicketLogs] = useState<TicketLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
+  const [recovering, setRecovering] = useState(false);
 
   // Fonction pour corriger les problèmes d'encodage
   const fixEncoding = (text: string): string => {
@@ -369,12 +376,94 @@ function RowDetailsModal({ row, headers, isOpen, onClose }: RowDetailsModalProps
     h.toLowerCase().includes('customer reference') || h.toLowerCase().includes('customerreference')
   );
 
+  // Fonction pour récupérer le ticket
+  const handleSelfAssign = async () => {
+    if (!row || recovering) return;
+
+    setRecovering(true);
+    try {
+      // Trouver le ticketId
+      const workOrderValue = workOrderNumber && row[workOrderNumber] ? String(row[workOrderNumber]) : '';
+      
+      if (!workOrderValue) {
+        if (onNotification) {
+          onNotification('error', 'Erreur', 'Impossible de trouver le numéro de ticket');
+        }
+        setRecovering(false);
+        return;
+      }
+
+      // Récupérer le ticket depuis l'API pour obtenir son ID
+      const params = new URLSearchParams();
+      params.append('singleTicket', 'true');
+      params.append('workOrderNumber', workOrderValue);
+      
+      const ticketResponse = await fetch(`/api/tickets?${params.toString()}`);
+      if (!ticketResponse.ok) {
+        throw new Error('Ticket non trouvé');
+      }
+
+      const { ticket } = await ticketResponse.json();
+
+      // Appeler l'API de récupération
+      const response = await fetch('/api/tickets/self-assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketId: ticket._id })
+      });
+
+      if (response.ok) {
+        if (onNotification) {
+          onNotification('success', 'Ticket récupéré', `Le ticket ${workOrderValue} vous a été assigné avec succès`);
+        }
+        onClose();
+        if (onSelfAssign) {
+          onSelfAssign();
+        }
+      } else {
+        const error = await response.json();
+        if (onNotification) {
+          onNotification('error', 'Erreur de récupération', error.error || 'Impossible de récupérer le ticket');
+        }
+      }
+    } catch (error) {
+      console.error('Erreur lors de la récupération:', error);
+      if (onNotification) {
+        onNotification('error', 'Erreur', 'Une erreur est survenue lors de la récupération du ticket');
+      }
+    } finally {
+      setRecovering(false);
+    }
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content row-details-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">Détails de la ligne</h2>
           <div className="modal-subtitle">
+            {canSelfAssign && user && user.employee?.linked && (
+              <button 
+                onClick={handleSelfAssign}
+                disabled={recovering}
+                className="self-assign-btn"
+                style={{
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  fontWeight: '600',
+                  cursor: recovering ? 'not-allowed' : 'pointer',
+                  opacity: recovering ? 0.6 : 1,
+                  transition: 'all 0.3s ease',
+                  marginRight: '12px',
+                  fontSize: '14px'
+                }}
+              >
+                {recovering ? '⏳ Récupération...' : '🎯 Récupérer ce ticket'}
+              </button>
+            )}
             {(() => {
               const workOrderValue = workOrderNumber && row[workOrderNumber] ? String(row[workOrderNumber]) : null;
               return workOrderValue ? (
@@ -451,8 +540,23 @@ function RowDetailsModal({ row, headers, isOpen, onClose }: RowDetailsModalProps
   );
 }
 
-function DashboardContent({ user }: DashboardContentProps) {
-  const [excelData, setExcelData] = useState<ExcelData>({
+interface Notification {
+  id: number;
+  type: 'success' | 'error' | 'info';
+  title: string;
+  message: string;
+}
+
+interface DragStartHandler {
+  (ticket: { ticketId: string; workOrderNumber: string; status: string } | null): void;
+}
+
+function DashboardContent({ user, onDataRefresh, onDragStart, isAdmin, excelData: parentExcelData, loading: parentLoading }: DashboardContentProps & { 
+  onDataRefresh?: () => void;
+  onDragStart?: DragStartHandler;
+  isAdmin?: boolean;
+}) {
+  const [excelData, setExcelData] = useState<ExcelData>(parentExcelData || {
     headers: [],
     data: [],
     filename: null,
@@ -461,7 +565,7 @@ function DashboardContent({ user }: DashboardContentProps) {
     rowCount: 0,
     columnCount: 0
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(parentLoading ?? true);
   const [uploading, setUploading] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
   const [showColumnSelector, setShowColumnSelector] = useState(false);
@@ -469,15 +573,81 @@ function DashboardContent({ user }: DashboardContentProps) {
   const [showRowDetails, setShowRowDetails] = useState(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [filteredData, setFilteredData] = useState<Record<string, unknown>[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Synchroniser les données du parent
+  useEffect(() => {
+    if (parentExcelData) {
+      console.log('[DashboardContent] Synchronisation des données du parent:', {
+        rowCount: parentExcelData.data?.length,
+        headers: parentExcelData.headers?.length
+      });
+      setExcelData(parentExcelData);
+      setFilteredData(parentExcelData.data || []);
+      // Initialiser les colonnes visibles
+      if (parentExcelData.headers && parentExcelData.headers.length > 0) {
+        setVisibleColumns(parentExcelData.headers);
+      }
+      setLoading(false);
+    }
+  }, [parentExcelData]);
+
+  // Mettre à jour le selectedRow si le modal est ouvert et que les données ont changé
+  useEffect(() => {
+    console.log('[DashboardContent] Check update selectedRow:', {
+      hasSelectedRow: !!selectedRow?.row,
+      showRowDetails,
+      dataLength: excelData.data.length
+    });
+    
+    if (selectedRow?.row && showRowDetails && excelData.data.length > 0) {
+      // Trouver le header du Work Order Number pour identifier le ticket
+      const workOrderHeader = excelData.headers.find(h => 
+        h.toLowerCase().includes('work order number') || h.toLowerCase().includes('workordernumber')
+      );
+      
+      console.log('[DashboardContent] workOrderHeader:', workOrderHeader);
+      
+      if (workOrderHeader && selectedRow.row[workOrderHeader]) {
+        const currentWorkOrder = selectedRow.row[workOrderHeader];
+        console.log('[DashboardContent] Recherche du ticket:', currentWorkOrder);
+        
+        // Chercher le ticket mis à jour dans les nouvelles données
+        const updatedRow = excelData.data.find(row => 
+          row[workOrderHeader] === currentWorkOrder
+        );
+        
+        if (updatedRow) {
+          console.log('[DashboardContent] Ticket trouvé, mise à jour:', {
+            oldEmployeeId: selectedRow.row['Employee ID'],
+            newEmployeeId: updatedRow['Employee ID'],
+            oldStatus: selectedRow.row['Work Order Status ID'],
+            newStatus: updatedRow['Work Order Status ID']
+          });
+          
+          // Mettre à jour selectedRow avec les nouvelles données
+          setSelectedRow({
+            row: updatedRow,
+            headers: excelData.headers
+          });
+        } else {
+          console.log('[DashboardContent] Ticket non trouvé dans les nouvelles données');
+        }
+      }
+    }
+  }, [excelData, showRowDetails]);
 
   useEffect(() => {
-    fetchExcelData();
-  }, []);
+    if (!parentExcelData) {
+      fetchExcelData();
+    }
+  }, [parentExcelData]);
 
   // Effet pour filtrer les données quand le terme de recherche change
   useEffect(() => {
     if (!searchTerm.trim()) {
-      setFilteredData(excelData.data);
+      setFilteredData(excelData.data || []);
       return;
     }
 
@@ -560,6 +730,20 @@ function DashboardContent({ user }: DashboardContentProps) {
     }
   };
 
+  const showNotification = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    const id = Date.now();
+    setNotifications(prev => [...prev, { id, type, title, message }]);
+    
+    // Auto-remove après 5 secondes
+    setTimeout(() => {
+      removeNotification(id);
+    }, 5000);
+  };
+
+  const removeNotification = (id: number) => {
+    setNotifications(prev => prev.filter(notif => notif.id !== id));
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -577,44 +761,56 @@ function DashboardContent({ user }: DashboardContentProps) {
 
       if (response.ok) {
         const result = await response.json();
-        alert(`Fichier importé avec succès: ${result.rowCount} lignes, ${result.columnCount} colonnes`);
+        showNotification(
+          'success',
+          'Import réussi',
+          `${result.rowCount} lignes et ${result.columnCount} colonnes importées`
+        );
         setSearchTerm("");
-        await fetchExcelData(); // Recharger les données
+        await fetchExcelData();
+        // Rafraîchir les données du parent pour mettre à jour la sidebar
+        if (onDataRefresh) {
+          onDataRefresh();
+        }
       } else {
         const error = await response.json();
-        alert(`Erreur: ${error.error}`);
+        showNotification('error', 'Erreur d\'import', error.error || 'Une erreur est survenue');
       }
     } catch (error) {
       console.error("Erreur lors de l'upload:", error);
-      alert("Erreur lors de l'upload du fichier");
+      showNotification('error', 'Erreur d\'upload', 'Impossible de télécharger le fichier');
     } finally {
       setUploading(false);
-      // Reset file input
       event.target.value = "";
     }
   };
 
-  const clearData = async () => {
-    if (!confirm("Êtes-vous sûr de vouloir supprimer toutes les données ?")) {
-      return;
-    }
+  const clearData = () => {
+    setShowDeleteConfirm(true);
+  };
 
+  const confirmDelete = async () => {
+    setShowDeleteConfirm(false);
+    
     try {
       const response = await fetch("/api/excel", {
         method: "DELETE",
       });
 
       if (response.ok) {
-        alert("Données supprimées avec succès");
+        showNotification('success', 'Suppression réussie', 'Toutes les données ont été supprimées');
         setSearchTerm("");
         await fetchExcelData();
+        if (onDataRefresh) {
+          onDataRefresh();
+        }
       } else {
         const error = await response.json();
-        alert(`Erreur: ${error.error}`);
+        showNotification('error', 'Erreur de suppression', error.error || 'Impossible de supprimer les données');
       }
     } catch (error) {
       console.error("Erreur lors de la suppression:", error);
-      alert("Erreur lors de la suppression");
+      showNotification('error', 'Erreur de suppression', 'Une erreur est survenue');
     }
   };
 
@@ -772,15 +968,65 @@ function DashboardContent({ user }: DashboardContentProps) {
                 </tr>
               </thead>
               <tbody>
-                {filteredData.map((row, rowIndex) => (
-                  <tr key={rowIndex} className="clickable-row" onClick={() => handleRowClick(row)}>
-                    {visibleColumns.map((header, colIndex) => (
-                      <td key={colIndex}>
-                        {fixEncoding(String(row[header] || ""))}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                {filteredData.map((row, rowIndex) => {
+                  const statusIdCol = excelData.headers.find(h => h.toLowerCase().includes('work order status id'));
+                  const status = statusIdCol ? String(row[statusIdCol] || '') : '';
+                  const isTBP = status === 'TBP';
+                  const canDrag = isAdmin && isTBP;
+                  
+                  // Trouver les colonnes pour l'ID du ticket
+                  const workOrderCol = excelData.headers.find(h => 
+                    h.toLowerCase().includes('work order number') || h.toLowerCase().includes('workordernumber')
+                  );
+                  const customerRefCol = excelData.headers.find(h => 
+                    h.toLowerCase().includes('customer reference number') || h.toLowerCase().includes('customerreferencenumber')
+                  );
+                  
+                  const workOrderNumber = workOrderCol ? String(row[workOrderCol] || '') : '';
+                  const customerRef = customerRefCol ? String(row[customerRefCol] || '') : '';
+                  
+                  return (
+                    <tr 
+                      key={rowIndex} 
+                      className={`clickable-row ${canDrag ? 'draggable-row' : ''}`}
+                      draggable={canDrag}
+                      onDragStart={(e) => {
+                        if (canDrag && onDragStart) {
+                          e.dataTransfer.effectAllowed = 'move';
+                          e.currentTarget.classList.add('dragging');
+                          // Récupérer l'ID du ticket depuis la DB
+                          fetch(`/api/tickets?workOrderNumber=${encodeURIComponent(workOrderNumber)}&singleTicket=true`)
+                            .then(res => res.json())
+                            .then(data => {
+                              if (data.ticket) {
+                                onDragStart({ 
+                                  ticketId: data.ticket._id, 
+                                  workOrderNumber,
+                                  status 
+                                });
+                              }
+                            });
+                        }
+                      }}
+                      onDragEnd={(e) => {
+                        e.currentTarget.classList.remove('dragging');
+                        if (onDragStart) {
+                          onDragStart(null);
+                        }
+                      }}
+                      onClick={() => handleRowClick(row)}
+                    >
+                      {visibleColumns.map((header, colIndex) => (
+                        <td key={colIndex}>
+                          {fixEncoding(String(row[header] || ""))}
+                          {header === statusIdCol && isTBP && isAdmin && (
+                            <span className="tbp-indicator">DRAG</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -805,6 +1051,54 @@ function DashboardContent({ user }: DashboardContentProps) {
         isOpen={showRowDetails}
         onClose={closeRowDetails}
       />
+
+      {/* Modale de confirmation de suppression */}
+      {showDeleteConfirm && (
+        <div className="confirmation-modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="confirmation-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="confirmation-modal-icon">⚠️</div>
+            <h3 className="confirmation-modal-title">Supprimer les données ?</h3>
+            <p className="confirmation-modal-message">
+              Cette action est irréversible. Toutes les données Excel importées seront définitivement supprimées.
+            </p>
+            <div className="confirmation-modal-actions">
+              <button 
+                className="confirmation-btn confirmation-btn-cancel"
+                onClick={() => setShowDeleteConfirm(false)}
+              >
+                Annuler
+              </button>
+              <button 
+                className="confirmation-btn confirmation-btn-confirm"
+                onClick={confirmDelete}
+              >
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notifications Toast */}
+      {notifications.map(notification => (
+        <div key={notification.id} className={`notification-toast ${notification.type}`}>
+          <div className="notification-icon">
+            {notification.type === 'success' && '✓'}
+            {notification.type === 'error' && '✕'}
+            {notification.type === 'info' && 'ℹ'}
+          </div>
+          <div className="notification-content">
+            <div className="notification-title">{notification.title}</div>
+            <div className="notification-message">{notification.message}</div>
+          </div>
+          <button 
+            className="notification-close"
+            onClick={() => removeNotification(notification.id)}
+          >
+            ×
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -815,10 +1109,33 @@ function ClosedContent() {
   const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
   const [selectedRow, setSelectedRow] = useState<RowDetail | null>(null);
   const [showRowDetails, setShowRowDetails] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     fetchClosedTickets();
   }, []);
+
+  // Mettre à jour le selectedRow si le modal est ouvert et que les données ont changé
+  useEffect(() => {
+    if (selectedRow?.row && selectedRow?.headers && showRowDetails && closedTickets.length > 0) {
+      const workOrderHeader = selectedRow.headers.find(h => 
+        h.toLowerCase().includes('work order number') || h.toLowerCase().includes('workordernumber')
+      );
+      
+      if (workOrderHeader && selectedRow.row[workOrderHeader]) {
+        const updatedTicket = closedTickets.find(ticket => 
+          ticket.rawData && ticket.rawData[workOrderHeader] === selectedRow.row[workOrderHeader]
+        );
+        
+        if (updatedTicket && updatedTicket.rawData) {
+          setSelectedRow({
+            row: updatedTicket.rawData,
+            headers: updatedTicket.headers || selectedRow.headers
+          });
+        }
+      }
+    }
+  }, [closedTickets, showRowDetails]);
 
   const fetchClosedTickets = async () => {
     try {
@@ -848,6 +1165,17 @@ function ClosedContent() {
     setSelectedRow(null);
   };
 
+  // Filtrer les tickets selon la recherche
+  const filteredTickets = closedTickets.filter(ticket => {
+    if (!searchQuery.trim()) return true;
+    
+    const query = searchQuery.toLowerCase();
+    return visibleColumns.some(header => {
+      const value = String(ticket.rawData[header] || '').toLowerCase();
+      return value.includes(query);
+    });
+  });
+
   if (loading) {
     return (
       <div className="content-section">
@@ -866,7 +1194,42 @@ function ClosedContent() {
         <p className="section-subtitle">Tickets absents du dernier import • {closedTickets.length} ticket(s)</p>
       </div>
 
-      {closedTickets.length > 0 ? (
+      {/* Barre de recherche */}
+      {closedTickets.length > 0 && (
+        <div className="search-section">
+          <div className="search-container">
+            <div className="search-input-wrapper">
+              <span className="search-icon">🔍</span>
+              <input
+                type="text"
+                placeholder="Rechercher par Work Order Number ou Customer Reference Number..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="search-input"
+              />
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery("")}
+                  className="clear-search-btn"
+                  title="Effacer la recherche"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {searchQuery && (
+              <div className="search-results-info">
+                <span className="results-count">
+                  {filteredTickets.length} résultat{filteredTickets.length !== 1 ? 's' : ''} trouvé{filteredTickets.length !== 1 ? 's' : ''}
+                  {filteredTickets.length !== closedTickets.length && ` sur ${closedTickets.length} ticket${closedTickets.length !== 1 ? 's' : ''}`}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {filteredTickets.length > 0 ? (
         <div className="excel-table-container">
           <div className="excel-table-wrapper">
             <table className="excel-table">
@@ -880,7 +1243,7 @@ function ClosedContent() {
                 </tr>
               </thead>
               <tbody>
-                {closedTickets.map((ticket, rowIndex) => (
+                {filteredTickets.map((ticket, rowIndex) => (
                   <tr key={rowIndex} className="clickable-row" onClick={() => handleRowClick(ticket.rawData)}>
                     {visibleColumns.map((header, colIndex) => (
                       <td key={colIndex} className="excel-cell">
@@ -893,11 +1256,15 @@ function ClosedContent() {
             </table>
           </div>
         </div>
+      ) : searchQuery.trim() ? (
+        <div className="no-data">
+          <h3>Aucun résultat</h3>
+          <p>Aucun ticket ne correspond à votre recherche "{searchQuery}"</p>
+        </div>
       ) : (
         <div className="no-data">
-          <div className="no-data-icon">🔒</div>
           <h3>Aucun ticket fermé</h3>
-          <p>Tous les tickets sont présents dans le dernier import.</p>
+          <p>Excellent ! Tous les tickets sont actifs et présents dans le dernier import.</p>
         </div>
       )}
 
@@ -912,7 +1279,12 @@ function ClosedContent() {
   );
 }
 
-function UnassignedContent() {
+function UnassignedContent({ onDragStart, isAdmin, refreshTrigger, user }: { 
+  onDragStart?: DragStartHandler;
+  isAdmin?: boolean;
+  refreshTrigger?: number;
+  user?: User | null;
+}) {
   const [excelData, setExcelData] = useState<ExcelData>({
     headers: [],
     data: [],
@@ -926,10 +1298,117 @@ function UnassignedContent() {
   const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
   const [selectedRow, setSelectedRow] = useState<RowDetail | null>(null);
   const [showRowDetails, setShowRowDetails] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState<number | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  const showNotification = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    const id = Date.now();
+    setNotifications(prev => [...prev, { id, type, title, message }]);
+    
+    // Auto-remove après 5 secondes
+    setTimeout(() => {
+      removeNotification(id);
+    }, 5000);
+  };
+
+  const removeNotification = (id: number) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
 
   useEffect(() => {
     fetchExcelData();
   }, []);
+
+  // Rafraîchir quand un ticket est assigné depuis cet onglet
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0) {
+      console.log('[UnassignedContent] Refresh déclenché');
+      fetchExcelData();
+    }
+  }, [refreshTrigger]);
+
+  // Système de polling intelligent pour détecter les mises à jour
+  useEffect(() => {
+    const checkForUpdates = async () => {
+      try {
+        const response = await fetch("/api/excel/last-update");
+        if (response.ok) {
+          const data = await response.json();
+          const newTimestamp = data.timestamp;
+          
+          // Si c'est la première fois, initialiser le timestamp
+          if (lastUpdateTimestamp === null) {
+            setLastUpdateTimestamp(newTimestamp);
+            return;
+          }
+          
+          // Si le timestamp a changé, rafraîchir les données
+          if (newTimestamp && newTimestamp > lastUpdateTimestamp) {
+            console.log('[UnassignedContent - Polling] Mise à jour détectée, rechargement...');
+            await fetchExcelData();
+            setLastUpdateTimestamp(newTimestamp);
+          }
+        }
+      } catch (error) {
+        console.error('[UnassignedContent - Polling] Erreur:', error);
+      }
+    };
+
+    // Vérifier immédiatement au montage
+    checkForUpdates();
+
+    // Vérifier toutes les 5 secondes
+    const intervalId = setInterval(checkForUpdates, 5000);
+
+    // Nettoyer l'intervalle au démontage
+    return () => clearInterval(intervalId);
+  }, [lastUpdateTimestamp]);
+
+  // Optimisation: Vérifier les mises à jour quand l'onglet redevient visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[UnassignedContent - Polling] Onglet visible, vérification...');
+        fetch("/api/excel/last-update")
+          .then(res => res.json())
+          .then(data => {
+            const newTimestamp = data.timestamp;
+            if (lastUpdateTimestamp && newTimestamp && newTimestamp > lastUpdateTimestamp) {
+              console.log('[UnassignedContent - Polling] Mise à jour détectée après retour');
+              fetchExcelData();
+              setLastUpdateTimestamp(newTimestamp);
+            }
+          })
+          .catch(err => console.error('[UnassignedContent - Polling] Erreur:', err));
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [lastUpdateTimestamp]);
+
+  // Mettre à jour le selectedRow si le modal est ouvert et que les données ont changé
+  useEffect(() => {
+    if (selectedRow?.row && showRowDetails && excelData.data.length > 0) {
+      const workOrderHeader = excelData.headers.find(h => 
+        h.toLowerCase().includes('work order number') || h.toLowerCase().includes('workordernumber')
+      );
+      
+      if (workOrderHeader && selectedRow.row[workOrderHeader]) {
+        const updatedRow = excelData.data.find(row => 
+          row[workOrderHeader] === selectedRow.row[workOrderHeader]
+        );
+        
+        if (updatedRow) {
+          setSelectedRow({
+            row: updatedRow,
+            headers: excelData.headers
+          });
+        }
+      }
+    }
+  }, [excelData.data, showRowDetails, selectedRow]);
 
   const fetchExcelData = async () => {
     try {
@@ -990,6 +1469,17 @@ function UnassignedContent() {
 
   const unassignedData = getUnassignedData();
 
+  // Filtrer les données selon la recherche
+  const filteredUnassignedData = unassignedData.filter(row => {
+    if (!searchQuery.trim()) return true;
+    
+    const query = searchQuery.toLowerCase();
+    return visibleColumns.some(header => {
+      const value = String(row[header] || '').toLowerCase();
+      return value.includes(query);
+    });
+  });
+
   const handleRowClick = (row: RowDetail) => {
     setSelectedRow(row);
     setShowRowDetails(true);
@@ -1018,8 +1508,43 @@ function UnassignedContent() {
         <p className="section-subtitle">Tâches sans employé assigné • Status: TBP (To be planned) • {unassignedData.length} ligne(s)</p>
       </div>
 
+      {/* Barre de recherche */}
+      {unassignedData.length > 0 && (
+        <div className="search-section">
+          <div className="search-container">
+            <div className="search-input-wrapper">
+              <span className="search-icon">🔍</span>
+              <input
+                type="text"
+                placeholder="Rechercher par Work Order Number ou Customer Reference Number..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="search-input"
+              />
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery("")}
+                  className="clear-search-btn"
+                  title="Effacer la recherche"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {searchQuery && (
+              <div className="search-results-info">
+                <span className="results-count">
+                  {filteredUnassignedData.length} résultat{filteredUnassignedData.length !== 1 ? 's' : ''} trouvé{filteredUnassignedData.length !== 1 ? 's' : ''}
+                  {filteredUnassignedData.length !== unassignedData.length && ` sur ${unassignedData.length} ticket${unassignedData.length !== 1 ? 's' : ''}`}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Tableau des données non attribuées */}
-      {unassignedData.length > 0 ? (
+      {filteredUnassignedData.length > 0 ? (
         <div className="excel-table-container">
           <div className="excel-table-wrapper">
             <table className="excel-table">
@@ -1033,24 +1558,75 @@ function UnassignedContent() {
                 </tr>
               </thead>
               <tbody>
-                {unassignedData.map((row, rowIndex) => (
-                  <tr key={rowIndex} className="clickable-row" onClick={() => handleRowClick(row)}>
-                    {visibleColumns.map((header, colIndex) => (
-                      <td key={colIndex} className="excel-cell">
-                        {String(row[header] || '')}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                {filteredUnassignedData.map((row, rowIndex) => {
+                  const workOrderCol = excelData.headers.find(h => 
+                    h.toLowerCase().includes('work order number') || h.toLowerCase().includes('workordernumber')
+                  );
+                  const customerRefCol = excelData.headers.find(h => 
+                    h.toLowerCase().includes('customer reference number') || h.toLowerCase().includes('customerreferencenumber')
+                  );
+                  const statusIdCol = excelData.headers.find(h => 
+                    h.toLowerCase().includes('work order status id')
+                  );
+                  
+                  const workOrderNumber = workOrderCol ? String(row[workOrderCol] || '') : '';
+                  const status = statusIdCol ? String(row[statusIdCol] || '') : 'TBP';
+                  const canDrag = isAdmin;
+                  
+                  return (
+                    <tr 
+                      key={rowIndex} 
+                      className={`clickable-row ${canDrag ? 'draggable-row' : ''}`}
+                      draggable={canDrag}
+                      onDragStart={(e) => {
+                        if (canDrag && onDragStart) {
+                          e.dataTransfer.effectAllowed = 'move';
+                          e.currentTarget.classList.add('dragging');
+                          fetch(`/api/tickets?workOrderNumber=${encodeURIComponent(workOrderNumber)}&singleTicket=true`)
+                            .then(res => res.json())
+                            .then(data => {
+                              if (data.ticket) {
+                                onDragStart({ 
+                                  ticketId: data.ticket._id, 
+                                  workOrderNumber,
+                                  status 
+                                });
+                              }
+                            });
+                        }
+                      }}
+                      onDragEnd={(e) => {
+                        e.currentTarget.classList.remove('dragging');
+                        if (onDragStart) {
+                          onDragStart(null);
+                        }
+                      }}
+                      onClick={() => handleRowClick(row)}
+                    >
+                      {visibleColumns.map((header, colIndex) => (
+                        <td key={colIndex} className="excel-cell">
+                          {String(row[header] || '')}
+                          {header === statusIdCol && isAdmin && (
+                            <span className="tbp-indicator">DRAG</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
+      ) : searchQuery.trim() ? (
+        <div className="no-data">
+          <h3>Aucun résultat</h3>
+          <p>Aucun ticket ne correspond à votre recherche "{searchQuery}"</p>
+        </div>
       ) : (
         <div className="no-data">
-          <div className="no-data-icon">📋</div>
           <h3>Aucune tâche non attribuée</h3>
-          <p>Toutes les tâches avec le statut "TBP" ont été attribuées à des employés.</p>
+          <p>Parfait ! Toutes les tâches avec le statut "TBP" ont été assignées à des employés.</p>
         </div>
       )}
 
@@ -1060,7 +1636,33 @@ function UnassignedContent() {
         headers={excelData.headers}
         isOpen={showRowDetails}
         onClose={closeRowDetails}
+        canSelfAssign={!isAdmin && user?.employee?.linked}
+        onSelfAssign={fetchExcelData}
+        user={user}
+        onNotification={showNotification}
       />
+
+      {/* Notifications toast */}
+      {notifications.map(notification => (
+        <div key={notification.id} className={`notification-toast ${notification.type}`}>
+          <div className="notification-content">
+            <span className="notification-icon">
+              {notification.type === 'success' ? '✅' : notification.type === 'error' ? '❌' : 'ℹ️'}
+            </span>
+            <div className="notification-text">
+              <div className="notification-title">{notification.title}</div>
+              <div className="notification-message">{notification.message}</div>
+            </div>
+          </div>
+          <button 
+            className="notification-close" 
+            onClick={() => removeNotification(notification.id)}
+            aria-label="Fermer"
+          >
+            ×
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1083,6 +1685,28 @@ function EmployeeContent({ employeeKey }: EmployeeContentProps) {
   useEffect(() => {
     fetchExcelData();
   }, []);
+
+  // Mettre à jour le selectedRow si le modal est ouvert et que les données ont changé
+  useEffect(() => {
+    if (selectedRow?.row && showRowDetails && excelData.data.length > 0) {
+      const workOrderHeader = excelData.headers.find(h => 
+        h.toLowerCase().includes('work order number') || h.toLowerCase().includes('workordernumber')
+      );
+      
+      if (workOrderHeader && selectedRow.row[workOrderHeader]) {
+        const updatedRow = excelData.data.find(row => 
+          row[workOrderHeader] === selectedRow.row[workOrderHeader]
+        );
+        
+        if (updatedRow) {
+          setSelectedRow({
+            row: updatedRow,
+            headers: excelData.headers
+          });
+        }
+      }
+    }
+  }, [excelData.data, showRowDetails, selectedRow]);
 
   const fetchExcelData = async () => {
     try {
@@ -1775,6 +2399,9 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [adminSubTab, setAdminSubTab] = useState("overview");
   const [operatorsExpanded, setOperatorsExpanded] = useState(true);
+  const [draggedTicket, setDraggedTicket] = useState<{ ticketId: string; workOrderNumber: string; status: string } | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unassignedRefreshTrigger, setUnassignedRefreshTrigger] = useState(0);
   const [excelData, setExcelData] = useState<ExcelData>({
     headers: [],
     data: [],
@@ -1784,6 +2411,7 @@ export default function Dashboard() {
     rowCount: 0,
     columnCount: 0
   });
+  const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState<number | null>(null);
 
   const router = useRouter();
 
@@ -1807,19 +2435,110 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchUser();
-    fetchExcelData(); // Tous les utilisateurs chargent les données Excel
   }, [fetchUser]);
+
+  useEffect(() => {
+    fetchExcelData(); // Charger les données Excel au montage
+  }, []);
+
+  // Système de polling intelligent pour détecter les mises à jour
+  useEffect(() => {
+    const checkForUpdates = async () => {
+      try {
+        const response = await fetch("/api/excel/last-update");
+        if (response.ok) {
+          const data = await response.json();
+          const newTimestamp = data.timestamp;
+          
+          // Si c'est la première fois, initialiser le timestamp
+          if (lastUpdateTimestamp === null) {
+            setLastUpdateTimestamp(newTimestamp);
+            return;
+          }
+          
+          // Si le timestamp a changé, rafraîchir les données
+          if (newTimestamp && newTimestamp > lastUpdateTimestamp) {
+            console.log('[Polling] Mise à jour détectée, rechargement des données...');
+            await fetchExcelData();
+            setLastUpdateTimestamp(newTimestamp);
+            
+            // Déclencher aussi le refresh de l'onglet Non Attribué si c'est l'onglet actif
+            if (activeTab === 'unassigned') {
+              setUnassignedRefreshTrigger(prev => prev + 1);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[Polling] Erreur lors de la vérification des mises à jour:', error);
+      }
+    };
+
+    // Vérifier immédiatement au montage
+    checkForUpdates();
+
+    // Vérifier toutes les 5 secondes
+    const intervalId = setInterval(checkForUpdates, 5000);
+
+    // Nettoyer l'intervalle au démontage
+    return () => clearInterval(intervalId);
+  }, [lastUpdateTimestamp, activeTab]);
+
+  // Optimisation: Arrêter le polling quand l'onglet n'est pas visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Quand l'onglet redevient visible, vérifier immédiatement les mises à jour
+        console.log('[Polling] Onglet visible, vérification des mises à jour...');
+        fetch("/api/excel/last-update")
+          .then(res => res.json())
+          .then(data => {
+            const newTimestamp = data.timestamp;
+            if (lastUpdateTimestamp && newTimestamp && newTimestamp > lastUpdateTimestamp) {
+              console.log('[Polling] Mise à jour détectée après retour sur l\'onglet');
+              fetchExcelData();
+              setLastUpdateTimestamp(newTimestamp);
+              if (activeTab === 'unassigned') {
+                setUnassignedRefreshTrigger(prev => prev + 1);
+              }
+            }
+          })
+          .catch(err => console.error('[Polling] Erreur:', err));
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [lastUpdateTimestamp, activeTab]);
 
   const fetchExcelData = async () => {
     try {
+      console.log('[Dashboard] Fetch Excel Data...');
       const response = await fetch("/api/excel");
       if (response.ok) {
         const data = await response.json();
+        console.log('[Dashboard] Données reçues:', {
+          rowCount: data.data?.length,
+          headers: data.headers?.length
+        });
         setExcelData(data);
       }
     } catch (error) {
       console.error("Erreur lors de la récupération des données Excel:", error);
     }
+  };
+
+  const showNotification = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    const id = Date.now();
+    setNotifications(prev => [...prev, { id, type, title, message }]);
+    
+    // Auto-remove après 5 secondes
+    setTimeout(() => {
+      removeNotification(id);
+    }, 5000);
+  };
+
+  const removeNotification = (id: number) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
   // Extraire les employés uniques des données Excel
@@ -1855,6 +2574,68 @@ export default function Dashboard() {
     });
     
     return employees.sort((a, b) => a.name.localeCompare(b.name));
+  };
+
+  const handleTicketDrop = async (employeeId: string, employeeName: string) => {
+    if (!draggedTicket || !user || user.role !== 'admin') return;
+    
+    console.log('[handleTicketDrop] Début assignation:', {
+      ticketId: draggedTicket.ticketId,
+      workOrderNumber: draggedTicket.workOrderNumber,
+      status: draggedTicket.status,
+      employeeId,
+      employeeName
+    });
+    
+    if (draggedTicket.status !== 'TBP') {
+      showNotification('error', 'Action impossible', 'Seuls les tickets en statut TBP peuvent être assignés');
+      setDraggedTicket(null);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/tickets/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticketId: draggedTicket.ticketId,
+          employeeId,
+          employeeName
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('[Dashboard] Assignation réussie:', result);
+        
+        showNotification(
+          'success',
+          'Assignation réussie',
+          `Le ticket ${draggedTicket.workOrderNumber} a été assigné à ${employeeName}`
+        );
+        
+        console.log('[Dashboard] Rechargement des données...');
+        // Recharger les données (les composants enfants recevront automatiquement les nouvelles données)
+        await fetchExcelData();
+        
+        // Déclencher le refresh de l'onglet Non attribué
+        setUnassignedRefreshTrigger(prev => prev + 1);
+        
+        console.log('[Dashboard] Données rechargées');
+      } else {
+        const error = await response.json();
+        console.error('[Dashboard] Erreur assignation:', {
+          status: response.status,
+          error: error
+        });
+        showNotification('error', 'Erreur d\'assignation', error.error || 'Une erreur est survenue');
+      }
+    } catch (error) {
+      console.error('Erreur lors de l\'assignation:', error);
+      showNotification('error', 'Erreur d\'assignation', 'Impossible d\'assigner le ticket');
+    } finally {
+      setDraggedTicket(null);
+    }
   };
 
   const handleLogout = async () => {
@@ -1919,6 +2700,13 @@ export default function Dashboard() {
   const adminTabs = user?.role === "admin" ? [{ id: "admin", label: "Panel Admin", icon: "🔧" }] : [];
 
   const renderContent = () => {
+    console.log('[Dashboard] renderContent appelé avec:', {
+      activeTab,
+      hasExcelData: !!excelData.data?.length,
+      dataLength: excelData.data?.length,
+      headersLength: excelData.headers?.length
+    });
+    
     // Gérer les onglets d'employés
     if (activeTab.startsWith("employee-")) {
       const employeeKey = activeTab.replace("employee-", "");
@@ -1927,11 +2715,15 @@ export default function Dashboard() {
     
     switch (activeTab) {
       case "dashboard":
-        return <DashboardContent user={user} />;
+        console.log('[Dashboard] Rendering DashboardContent avec excelData:', {
+          rowCount: excelData.data?.length,
+          headers: excelData.headers?.length
+        });
+        return <DashboardContent user={user} excelData={excelData} loading={loading} onDataRefresh={fetchExcelData} onDragStart={setDraggedTicket} isAdmin={user?.role === 'admin'} />;
       case "closed":
         return <ClosedContent />;
       case "unassigned":
-        return <UnassignedContent />;
+        return <UnassignedContent onDragStart={setDraggedTicket} isAdmin={user?.role === 'admin'} refreshTrigger={unassignedRefreshTrigger} user={user} />;
       case "admin":
         return (
           <div className="content-section">
@@ -2091,17 +2883,39 @@ export default function Dashboard() {
                 
                 {/* Sous-onglets employés */}
                 <div className={`nav-submenu ${operatorsExpanded ? 'expanded' : 'collapsed'}`}>
-                  {otherEmployeeTabs.map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`nav-item sub-item ${activeTab === tab.id ? "active" : ""}`}
-                    >
-                      <span className="nav-icon">{tab.icon}</span>
-                      <span className="nav-text">{tab.label}</span>
-                      <div className="nav-indicator"></div>
-                    </button>
-                  ))}
+                  {otherEmployeeTabs.map((tab) => {
+                    const employeeKey = tab.id.replace('employee-', '');
+                    const [employeeId, ...nameParts] = employeeKey.split('-');
+                    const employeeName = nameParts.join('-');
+                    
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        onDragOver={(e) => {
+                          if (draggedTicket && user?.role === 'admin') {
+                            e.preventDefault();
+                            e.currentTarget.classList.add('drag-over');
+                          }
+                        }}
+                        onDragLeave={(e) => {
+                          e.currentTarget.classList.remove('drag-over');
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.currentTarget.classList.remove('drag-over');
+                          if (draggedTicket && user?.role === 'admin') {
+                            handleTicketDrop(employeeId, employeeName);
+                          }
+                        }}
+                        className={`nav-item sub-item ${activeTab === tab.id ? "active" : ""}`}
+                      >
+                        <span className="nav-icon">{tab.icon}</span>
+                        <span className="nav-text">{tab.label}</span>
+                        <div className="nav-indicator"></div>
+                      </button>
+                    );
+                  })}
                 </div>
               </>
             )}
@@ -2142,6 +2956,28 @@ export default function Dashboard() {
           </div>
         </main>
       </div>
+
+      {/* Notifications toast */}
+      {notifications.map(notification => (
+        <div key={notification.id} className={`notification-toast ${notification.type}`}>
+          <div className="notification-content">
+            <span className="notification-icon">
+              {notification.type === 'success' ? '✅' : notification.type === 'error' ? '❌' : 'ℹ️'}
+            </span>
+            <div className="notification-text">
+              <div className="notification-title">{notification.title}</div>
+              <div className="notification-message">{notification.message}</div>
+            </div>
+          </div>
+          <button 
+            className="notification-close" 
+            onClick={() => removeNotification(notification.id)}
+            aria-label="Fermer"
+          >
+            ×
+          </button>
+        </div>
+      ))}
     </div>
   );
 }

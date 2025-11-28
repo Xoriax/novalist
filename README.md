@@ -38,11 +38,16 @@ Novalist offre une plateforme sécurisée permettant de :
 - **Gestion du cycle de vie** - Tickets actifs, fermés, et réactivation automatique
 - **Détection automatique de tableaux** - Recognition intelligente du début des données (pas forcément en A1)
 - **Parsing flexible** - Support des fichiers avec en-têtes, logos, ou espaces en début
-- **Barre de recherche avancée** - Recherche par Work Order Number ou Customer Reference Number
+- **Barre de recherche avancée** - Recherche par Work Order Number ou Customer Reference Number dans tous les onglets
 - **Détails de tickets clickables** - Modal détaillé avec informations complètes du ticket
 - **Système de logs chronologiques** - Historique généré automatiquement, tri du plus récent au plus ancien
 - **Modal à deux colonnes** - Détails à gauche, logs chronologiques à droite
 - **Scroll indépendant** - Navigation séparée dans chaque section du modal
+- **Système de drag & drop** - Assignation intuitive de tickets aux opérateurs (admin)
+- **Assignation automatique** - Les opérateurs peuvent récupérer les tickets TBP
+- **Notifications toast** - Retours visuels élégants pour toutes les actions
+- **Synchronisation temps réel** - Polling intelligent (5s) pour mises à jour multi-utilisateurs
+- **Logs d'attribution** - Traçabilité complète de qui a assigné quel ticket
 
 ### Gestion Excel & Employés
 - **Import de fichiers Excel** (.xlsx, .xls, .csv) - Réservé aux administrateurs
@@ -128,9 +133,13 @@ src/
 │   │   │   ├── verify-code/  # Vérification code email
 │   │   │   └── verify-totp/  # Vérification code TOTP
 │   │   ├── excel/            # Import et gestion fichiers Excel
+│   │   │   ├── last-update/  # Polling temps réel (timestamp)
+│   │   │   └── upload/       # Upload fichiers Excel
 │   │   ├── ticket-history/   # Historique des tickets
 │   │   ├── ticket-logs/      # Logs détaillés des tickets
 │   │   └── tickets/          # CRUD tickets et recherche
+│   │       ├── assign/       # Assignation admin (drag & drop)
+│   │       └── self-assign/  # Auto-assignation opérateurs
 │   ├── favicon.ico           # Icône du site
 │   ├── globals.css           # Styles globaux (3700+ lignes)
 │   ├── layout.tsx            # Layout principal avec métadonnées
@@ -178,12 +187,14 @@ src/
 - `GET /api/excel` - Récupérer les données Excel stockées
 - `POST /api/excel` - Importer un fichier Excel (admin uniquement)
 - `DELETE /api/excel` - Supprimer toutes les données Excel (admin uniquement)
+- `GET /api/excel/last-update` - Obtenir le timestamp de la dernière modification (polling)
 
 ### Tickets
-- `GET /api/tickets` - Récupérer tickets avec recherche et pagination
-- `GET /api/tickets?singleTicket=true&workOrderNumber=XXX` - Récupérer ticket spécifique
-- `GET /api/ticket-logs` - Récupérer logs d'un ticket
-- `GET /api/ticket-history` - Récupérer historique complet d'un ticket
+- `GET /api/tickets` - Lister tous les tickets avec filtres et recherche
+- `POST /api/tickets/assign` - Assigner un ticket à un opérateur (admin uniquement)
+- `POST /api/tickets/self-assign` - Auto-assignation d'un ticket TBP (opérateurs)
+- `GET /api/ticket-logs` - Récupérer les logs d'un ticket spécifique
+- `GET /api/ticket-history` - Obtenir l'historique complet d'un ticket
 
 ## Fonctionnalités d'administration
 
