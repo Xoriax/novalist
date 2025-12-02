@@ -35,6 +35,7 @@ Novalist offre une plateforme sécurisée permettant de :
 - **Logs spécifiques** - Uniquement pour status, assignation, pièces et actions
 - **Système de tickets individuels** - Chaque ligne Excel devient un ticket en base de données
 - **Onglet "Fermé"** - Affichage dédié des tickets inactifs (absents du dernier import)
+- **Logs de fermeture** - Enregistrement automatique avec date de fermeture (🔒)
 - **Gestion du cycle de vie** - Tickets actifs, fermés, et réactivation automatique
 - **Détection automatique de tableaux** - Recognition intelligente du début des données (pas forcément en A1)
 - **Parsing flexible** - Support des fichiers avec en-têtes, logos, ou espaces en début
@@ -45,9 +46,14 @@ Novalist offre une plateforme sécurisée permettant de :
 - **Scroll indépendant** - Navigation séparée dans chaque section du modal
 - **Système de drag & drop** - Assignation intuitive de tickets aux opérateurs (admin)
 - **Assignation automatique** - Les opérateurs peuvent récupérer les tickets TBP
+- **Transfert de tickets (Admin)** - Les admins peuvent transférer des tickets entre opérateurs
+- **Récupération de tickets (Opérateurs)** - Les opérateurs peuvent récupérer les tickets d'autres opérateurs
+- **Validation temporelle 24h** - Délai de 24h requis depuis la dernière action pour transférer/récupérer
+- **Modal de validation** - Affichage visuel du délai avec temps écoulé et temps restant
 - **Notifications toast** - Retours visuels élégants pour toutes les actions
 - **Synchronisation temps réel** - Polling intelligent (5s) pour mises à jour multi-utilisateurs
 - **Logs d'attribution** - Traçabilité complète de qui a assigné quel ticket
+- **Logs de transfert** - Différenciation entre transferts et assignations initiales
 
 ### Gestion Excel & Employés
 - **Import de fichiers Excel** (.xlsx, .xls, .csv) - Réservé aux administrateurs
@@ -191,7 +197,7 @@ src/
 
 ### Tickets
 - `GET /api/tickets` - Lister tous les tickets avec filtres et recherche
-- `POST /api/tickets/assign` - Assigner un ticket à un opérateur (admin uniquement)
+- `POST /api/tickets/assign` - Assigner/transférer un ticket à un opérateur (admin + opérateurs pour eux-mêmes)
 - `POST /api/tickets/self-assign` - Auto-assignation d'un ticket TBP (opérateurs)
 - `GET /api/ticket-logs` - Récupérer les logs d'un ticket spécifique
 - `GET /api/ticket-history` - Obtenir l'historique complet d'un ticket

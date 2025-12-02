@@ -1,5 +1,112 @@
 # Release Notes - Novalist
 
+## Version 1.8.0 - Système de Transfert de Tickets et Validation Temporelle (Décembre 2025)
+
+### 🔄 Transfert de tickets entre opérateurs (Admin)
+
+**Fonctionnalité de transfert administrateur**
+- **Bouton "🔀 Transférer ce ticket"** : Accessible dans le modal de détails des tickets
+- **Modal de transfert élégant** : Interface avec gradient bleu et sélection d'opérateur
+- **Validation 24h** : Affichage visuel du délai avec code couleur (vert/rouge)
+- **Information temps réel** : Affichage du temps écoulé et temps restant
+- **Désactivation conditionnelle** : Bouton grisé si moins de 24h depuis dernière action
+- **Logs différenciés** : "Transféré de X vers Y" vs "Assigné à X" pour distinction claire
+
+**Validation temporelle intelligente**
+- **Parsing date français** : Format DD/MM/YYYY HH:MM:SS depuis "Last Code Date Time"
+- **Calcul précis** : Différence en heures avec décimales (ex: 15.3h)
+- **Règle métier 24h** : Impossible de transférer si < 24h depuis dernière action
+- **Messages d'erreur détaillés** : Indication du temps restant en cas de refus
+- **API stricte** : Validation côté serveur avec retour 400 si délai non respecté
+- **Console logs** : Traçabilité complète pour debugging (dates, calculs)
+
+### 📥 Récupération de tickets entre opérateurs
+
+**Auto-récupération pour opérateurs**
+- **Bouton "📥 Récupérer pour moi"** : Visible pour opérateurs sur onglets d'autres opérateurs
+- **Gradient orange** : Différenciation visuelle du bouton de transfert admin
+- **Même validation 24h** : Règles identiques pour tous les transferts
+- **Modal de confirmation** : Fond orange avec avertissement de transfert
+- **Sécurité renforcée** : Vérification que l'opérateur ne peut récupérer que pour lui-même
+- **API /api/tickets/assign étendue** : Support des opérateurs avec validation employee.linked
+
+**Système de permissions granulaire**
+- **Admin** : Peut transférer n'importe quel ticket vers n'importe quel opérateur
+- **Opérateur** : Peut uniquement récupérer un ticket pour son propre compte
+- **Vérification base de données** : Récupération du User pour valider employee.id
+- **Erreur 403 personnalisée** : Message clair si tentative de récupération pour autrui
+- **Logs de transfert** : Même système que pour les transferts admin
+
+### 📋 Logs de fermeture de tickets
+
+**Enregistrement automatique des fermetures**
+- **Détection lors de l'import** : Tickets absents du nouveau fichier Excel marqués comme fermés
+- **Type de log "closure"** : Nouvelle catégorie ajoutée au modèle Ticket
+- **Icon 🔒** : Identification visuelle claire des fermetures
+- **Date de fermeture** : Timestamp précis de la détection
+- **Status "closed"** : Mise à jour automatique du statut du ticket
+- **Onglet "Fermé"** : Affichage des tickets avec logs de fermeture
+
+**Intégration dans l'API Excel**
+- **Boucle ticketsToClose** : Traitement de tous les tickets à fermer
+- **Création de log** : Ajout automatique du log avec description et date
+- **Sauvegarde ticket** : Mise à jour en base de données
+- **Régénération ExcelData** : Trigger du polling pour synchronisation
+- **Validation Mongoose** : Enum étendu pour supporter le type "closure"
+
+### 🎨 Améliorations UI/UX
+
+**Modales de transfert modernes**
+- **Design glassmorphisme** : Effets de flou et transparence
+- **Gradients dynamiques** : Bleu pour admin, orange pour opérateurs
+- **Animations au survol** : Effets de lift et ombres renforcées
+- **Boîtes d'information** : Affichage des conditions avec icônes explicites
+- **Boutons conditionnels** : États désactivés avec cursor not-allowed
+- **Fermeture au clic extérieur** : UX intuitive avec overlay
+
+**Validation visuelle du délai**
+- **Boîte verte** : ✅ "Transfert autorisé - Plus de 24h écoulées"
+- **Boîte rouge** : ⏰ "Délai de 24h non écoulé - Attendez encore Xh"
+- **Affichage temps écoulé** : Format "15.3h / 24h requises"
+- **Calcul temps restant** : "Temps restant : 8.7h" si < 24h
+- **Bordures colorées** : Vert (#86efac) ou rouge (#fca5a5)
+- **Texte contrasté** : Couleurs adaptées pour lisibilité
+
+### 🔧 Modifications techniques
+
+**Modèle Ticket étendu**
+- **Type "closure"** : Ajouté à l'enum TicketLogSchema
+- **Validation Mongoose** : Mise à jour du schéma pour accepter "closure"
+- **Cache clearing** : `delete mongoose.models.Ticket` pour forcer recréation
+- **Rétrocompatibilité** : Logs existants préservés
+
+**API /api/tickets/assign refactorée**
+- **Import User model** : Ajout pour validation opérateurs
+- **Logique de permissions** : Branchement conditionnel admin vs opérateur
+- **Validation employee** : Vérification de employee.linked et employee.id
+- **Détection de transfert** : Basée sur présence d'employé actuel (vs status)
+- **Parsing date robuste** : Gestion d'erreurs avec try/catch
+- **Logs console détaillés** : Debugging complet du processus
+
+**Frontend dashboard.page.tsx**
+- **States ajoutés** : showTakeForSelfModal, takingForSelf, takeLastCodeInfo
+- **Fonction handleOpenTakeForSelfModal** : Calcul validation 24h pour récupération
+- **Fonction handleTakeForSelf** : Appel API avec gestion erreurs
+- **Props canTakeForSelf** : Transmission au RowDetailsModal depuis EmployeeContent
+- **Modal conditionnel** : Affichage selon rôle et statut ticket
+
+### 🐛 Corrections de bugs
+
+**Duplication de fonction**
+- **Problème** : handleOpenTransferModal définie deux fois causant erreur compilation
+- **Solution** : Suppression de la duplication
+- **Impact** : Build Next.js 16.0.1 fonctionnel
+
+**Erreur 403 récupération**
+- **Problème** : JWT ne contient pas employee, validation échouait
+- **Solution** : Récupération User depuis DB pour valider employee.id
+- **Impact** : Opérateurs peuvent maintenant récupérer des tickets
+
 ## Version 1.7.0 - Collaboration Temps Réel et Auto-assignation Opérateurs (Janvier 2026)
 
 ### 🔄 Système de polling temps réel

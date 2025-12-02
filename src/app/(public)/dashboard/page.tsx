@@ -62,6 +62,11 @@ interface RowDetailsModalProps {
   onSelfAssign?: () => void;  // Callback après récupération réussie
   user?: User | null;  // Informations de l'utilisateur
   onNotification?: (type: 'success' | 'error' | 'info', title: string, message: string) => void;  // Afficher une notification
+  canTransfer?: boolean;  // Si l'admin peut transférer le ticket
+  allEmployees?: AvailableEmployee[];  // Liste de tous les employés pour le transfert
+  onTransfer?: () => void;  // Callback après transfert réussi
+  canTakeForSelf?: boolean;  // Si l'opérateur peut récupérer le ticket pour lui-même
+  onTakeForSelf?: () => void;  // Callback après récupération réussie
 }
 
 interface TicketWithLogs {
@@ -94,12 +99,22 @@ interface DashboardContentProps {
 
 interface EmployeeContentProps {
   employeeKey: string;
+  user?: User | null;
+  allEmployees?: AvailableEmployee[];
+  onDataRefresh?: () => void;
 }
 
-function RowDetailsModal({ row, headers, isOpen, onClose, canSelfAssign, onSelfAssign, user, onNotification }: RowDetailsModalProps) {
+function RowDetailsModal({ row, headers, isOpen, onClose, canSelfAssign, onSelfAssign, user, onNotification, canTransfer, allEmployees, onTransfer, canTakeForSelf, onTakeForSelf }: RowDetailsModalProps) {
   const [ticketLogs, setTicketLogs] = useState<TicketLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [recovering, setRecovering] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [selectedEmployeeForTransfer, setSelectedEmployeeForTransfer] = useState<string>("");
+  const [transferring, setTransferring] = useState(false);
+  const [lastCodeInfo, setLastCodeInfo] = useState<{ lastCodeDateTime: string; hoursElapsed: number; canTransfer: boolean } | null>(null);
+  const [showTakeForSelfModal, setShowTakeForSelfModal] = useState(false);
+  const [takingForSelf, setTakingForSelf] = useState(false);
+  const [takeLastCodeInfo, setTakeLastCodeInfo] = useState<{ lastCodeDateTime: string; hoursElapsed: number; canTake: boolean } | null>(null);
 
   // Fonction pour corriger les problèmes d'encodage
   const fixEncoding = (text: string): string => {
@@ -436,6 +451,256 @@ function RowDetailsModal({ row, headers, isOpen, onClose, canSelfAssign, onSelfA
     }
   };
 
+  const handleOpenTransferModal = () => {
+    // Calculer les informations sur le délai de 24h
+    if (row) {
+      const lastCodeDateTimeCol = headers.find(h => h.toLowerCase().includes('last code date time'));
+      const employeeIdCol = headers.find(h => h.toLowerCase().includes('employee id'));
+      const employeeNameCol = headers.find(h => h.toLowerCase().includes('employee name'));
+      
+      const currentEmployeeId = employeeIdCol ? String(row[employeeIdCol] || '').trim() : '';
+      const currentEmployeeName = employeeNameCol ? String(row[employeeNameCol] || '').trim() : '';
+      const isAssigned = currentEmployeeId !== '' && currentEmployeeName !== '';
+      
+      if (isAssigned && lastCodeDateTimeCol && row[lastCodeDateTimeCol]) {
+        const lastCodeDateTimeStr = String(row[lastCodeDateTimeCol]);
+        try {
+          const [datePart, timePart] = lastCodeDateTimeStr.split(' ');
+          const [day, month, year] = datePart.split('/').map(Number);
+          const [hours, minutes, seconds] = timePart.split(':').map(Number);
+          
+          const lastCodeDateTime = new Date(year, month - 1, day, hours, minutes, seconds);
+          const now = new Date();
+          const diffInHours = (now.getTime() - lastCodeDateTime.getTime()) / (1000 * 60 * 60);
+          
+          setLastCodeInfo({
+            lastCodeDateTime: lastCodeDateTimeStr,
+            hoursElapsed: parseFloat(diffInHours.toFixed(1)),
+            canTransfer: diffInHours >= 24
+          });
+        } catch (error) {
+          console.error('Erreur parsing date:', error);
+          setLastCodeInfo(null);
+        }
+      } else {
+        setLastCodeInfo(null);
+      }
+    }
+    setShowTransferModal(true);
+  };
+
+  const handleOpenTakeForSelfModal = () => {
+    // Calculer les informations sur le délai de 24h pour la récupération
+    if (row) {
+      const lastCodeDateTimeCol = headers.find(h => h.toLowerCase().includes('last code date time'));
+      const employeeIdCol = headers.find(h => h.toLowerCase().includes('employee id'));
+      const employeeNameCol = headers.find(h => h.toLowerCase().includes('employee name'));
+      
+      const currentEmployeeId = employeeIdCol ? String(row[employeeIdCol] || '').trim() : '';
+      const currentEmployeeName = employeeNameCol ? String(row[employeeNameCol] || '').trim() : '';
+      const isAssigned = currentEmployeeId !== '' && currentEmployeeName !== '';
+      
+      if (isAssigned && lastCodeDateTimeCol && row[lastCodeDateTimeCol]) {
+        const lastCodeDateTimeStr = String(row[lastCodeDateTimeCol]);
+        try {
+          const [datePart, timePart] = lastCodeDateTimeStr.split(' ');
+          const [day, month, year] = datePart.split('/').map(Number);
+          const [hours, minutes, seconds] = timePart.split(':').map(Number);
+          
+          const lastCodeDateTime = new Date(year, month - 1, day, hours, minutes, seconds);
+          const now = new Date();
+          const diffInHours = (now.getTime() - lastCodeDateTime.getTime()) / (1000 * 60 * 60);
+          
+          setTakeLastCodeInfo({
+            lastCodeDateTime: lastCodeDateTimeStr,
+            hoursElapsed: parseFloat(diffInHours.toFixed(1)),
+            canTake: diffInHours >= 24
+          });
+        } catch (error) {
+          console.error('Erreur parsing date:', error);
+          setTakeLastCodeInfo(null);
+        }
+      } else {
+        setTakeLastCodeInfo(null);
+      }
+    }
+    setShowTakeForSelfModal(true);
+  };
+
+  const handleTransferTicket = async () => {
+    if (!selectedEmployeeForTransfer || !row) return;
+
+    setTransferring(true);
+    try {
+      // Récupérer les informations du ticket
+      const workOrderNumber = headers.find(h => h.toLowerCase().includes('work order number'));
+      const customerRef = headers.find(h => h.toLowerCase().includes('customer reference'));
+      const workOrderValue = workOrderNumber && row[workOrderNumber] ? String(row[workOrderNumber]) : null;
+      const customerRefValue = customerRef && row[customerRef] ? String(row[customerRef]) : null;
+
+      if (!workOrderValue && !customerRefValue) {
+        if (onNotification) {
+          onNotification('error', 'Erreur', 'Impossible d\'identifier le ticket');
+        }
+        return;
+      }
+
+      // Récupérer le ticket pour avoir son ID
+      const params = new URLSearchParams();
+      if (workOrderValue) params.append('workOrderNumber', workOrderValue);
+      if (customerRefValue) params.append('customerReference', customerRefValue);
+      params.append('singleTicket', 'true');
+      
+      const ticketResponse = await fetch(`/api/tickets?${params.toString()}`);
+      if (!ticketResponse.ok) {
+        throw new Error('Ticket non trouvé');
+      }
+
+      const { ticket } = await ticketResponse.json();
+
+      // Extraire l'ID et le nom de l'employé sélectionné
+      const selectedEmployee = allEmployees?.find(emp => emp.fullKey === selectedEmployeeForTransfer);
+      if (!selectedEmployee) {
+        if (onNotification) {
+          onNotification('error', 'Erreur', 'Employé sélectionné invalide');
+        }
+        return;
+      }
+
+      // Appeler l'API de transfert
+      const response = await fetch('/api/tickets/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          ticketId: ticket._id,
+          employeeId: selectedEmployee.id,
+          employeeName: selectedEmployee.name
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const message = result.isTransfer 
+          ? `Le ticket a été transféré avec succès vers ${selectedEmployee.name}`
+          : `Le ticket a été assigné avec succès à ${selectedEmployee.name}`;
+          
+        if (onNotification) {
+          onNotification('success', result.isTransfer ? 'Transfert réussi ✅' : 'Assignation réussie ✅', message);
+        }
+        setShowTransferModal(false);
+        setSelectedEmployeeForTransfer("");
+        onClose();
+        if (onTransfer) {
+          onTransfer();
+        }
+      } else {
+        const error = await response.json();
+        
+        // Message personnalisé selon le type d'erreur
+        let errorTitle = 'Erreur ❌';
+        let errorMessage = error.error || 'Impossible de transférer le ticket';
+        
+        // Si c'est une erreur de délai de 24h, afficher un message spécifique
+        if (error.hoursRemaining) {
+          errorTitle = '⏰ Délai de 24h non écoulé';
+          errorMessage = `Dernière action il y a ${error.hoursElapsed}h. Vous devez attendre encore ${error.hoursRemaining}h avant de pouvoir transférer ce ticket.`;
+        }
+        
+        if (onNotification) {
+          onNotification('error', errorTitle, errorMessage);
+        }
+      }
+    } catch (error) {
+      console.error('Erreur lors du transfert:', error);
+      if (onNotification) {
+        onNotification('error', 'Erreur', 'Une erreur est survenue lors du transfert du ticket');
+      }
+    } finally {
+      setTransferring(false);
+    }
+  };
+
+  const handleTakeForSelf = async () => {
+    if (!row || !user?.employee?.linked) return;
+
+    setTakingForSelf(true);
+    try {
+      // Récupérer les informations du ticket
+      const workOrderNumber = headers.find(h => h.toLowerCase().includes('work order number'));
+      const customerRef = headers.find(h => h.toLowerCase().includes('customer reference'));
+      const workOrderValue = workOrderNumber && row[workOrderNumber] ? String(row[workOrderNumber]) : null;
+      const customerRefValue = customerRef && row[customerRef] ? String(row[customerRef]) : null;
+
+      if (!workOrderValue && !customerRefValue) {
+        if (onNotification) {
+          onNotification('error', 'Erreur', 'Impossible d\'identifier le ticket');
+        }
+        return;
+      }
+
+      // Récupérer le ticket pour avoir son ID
+      const params = new URLSearchParams();
+      if (workOrderValue) params.append('workOrderNumber', workOrderValue);
+      if (customerRefValue) params.append('customerReference', customerRefValue);
+      params.append('singleTicket', 'true');
+      
+      const ticketResponse = await fetch(`/api/tickets?${params.toString()}`);
+      if (!ticketResponse.ok) {
+        throw new Error('Ticket non trouvé');
+      }
+
+      const { ticket } = await ticketResponse.json();
+
+      // Appeler l'API de transfert avec les infos de l'utilisateur connecté
+      const response = await fetch('/api/tickets/assign', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ticketId: ticket._id,
+          employeeId: user.employee.id,
+          employeeName: user.employee.name
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (onNotification) {
+          onNotification('success', 'Récupération réussie ✅', `Le ticket a été transféré avec succès vers votre file d'attente`);
+        }
+        setShowTakeForSelfModal(false);
+        onClose();
+        if (onTakeForSelf) {
+          onTakeForSelf();
+        }
+      } else {
+        const error = await response.json();
+        
+        // Message personnalisé selon le type d'erreur
+        let errorTitle = 'Erreur ❌';
+        let errorMessage = error.error || 'Impossible de récupérer le ticket';
+        
+        // Si c'est une erreur de délai de 24h, afficher un message spécifique
+        if (error.hoursRemaining) {
+          errorTitle = '⏰ Délai de 24h non écoulé';
+          errorMessage = `Dernière action il y a ${error.hoursElapsed}h. Vous devez attendre encore ${error.hoursRemaining}h avant de pouvoir récupérer ce ticket.`;
+        }
+        
+        if (onNotification) {
+          onNotification('error', errorTitle, errorMessage);
+        }
+      }
+    } catch (error) {
+      console.error('Erreur lors de la récupération:', error);
+      if (onNotification) {
+        onNotification('error', 'Erreur', 'Une erreur est survenue lors de la récupération du ticket');
+      }
+    } finally {
+      setTakingForSelf(false);
+    }
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content row-details-modal" onClick={(e) => e.stopPropagation()}>
@@ -462,6 +727,50 @@ function RowDetailsModal({ row, headers, isOpen, onClose, canSelfAssign, onSelfA
                 }}
               >
                 {recovering ? '⏳ Récupération...' : '🎯 Récupérer ce ticket'}
+              </button>
+            )}
+            {canTransfer && user?.role === 'admin' && allEmployees && allEmployees.length > 0 && (
+              <button 
+                onClick={handleOpenTransferModal}
+                disabled={transferring}
+                className="transfer-btn"
+                style={{
+                  background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  fontWeight: '600',
+                  cursor: transferring ? 'not-allowed' : 'pointer',
+                  opacity: transferring ? 0.6 : 1,
+                  transition: 'all 0.3s ease',
+                  marginRight: '12px',
+                  fontSize: '14px'
+                }}
+              >
+                {transferring ? '⏳ Transfert...' : '🔀 Transférer ce ticket'}
+              </button>
+            )}
+            {canTakeForSelf && user?.role === 'user' && user?.employee?.linked && (
+              <button 
+                onClick={handleOpenTakeForSelfModal}
+                disabled={takingForSelf}
+                className="take-for-self-btn"
+                style={{
+                  background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  fontWeight: '600',
+                  cursor: takingForSelf ? 'not-allowed' : 'pointer',
+                  opacity: takingForSelf ? 0.6 : 1,
+                  transition: 'all 0.3s ease',
+                  marginRight: '12px',
+                  fontSize: '14px'
+                }}
+              >
+                {takingForSelf ? '⏳ Récupération...' : '📥 Récupérer pour moi'}
               </button>
             )}
             {(() => {
@@ -536,6 +845,378 @@ function RowDetailsModal({ row, headers, isOpen, onClose, canSelfAssign, onSelfA
           </div>
         </div>
       </div>
+
+      {/* Modal de transfert */}
+      {showTransferModal && (
+        <div className="modal-overlay" onClick={() => setShowTransferModal(false)} style={{ zIndex: 10000 }}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ 
+            maxWidth: '550px',
+            background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+            border: '2px solid #e2e8f0',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+          }}>
+            <div className="modal-header" style={{
+              background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+              color: 'white',
+              padding: '24px',
+              borderRadius: '12px 12px 0 0',
+              marginBottom: '0'
+            }}>
+              <h2 className="modal-title" style={{ color: 'white', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '20px' }}>
+                <span style={{ fontSize: '28px' }}>🔀</span>
+                Transférer le ticket
+              </h2>
+              <button className="modal-close" onClick={() => setShowTransferModal(false)} style={{
+                background: 'rgba(255, 255, 255, 0.2)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '50%',
+                width: '32px',
+                height: '32px',
+                cursor: 'pointer',
+                fontSize: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s'
+              }}>✕</button>
+            </div>
+            <div className="modal-body" style={{ padding: '24px' }}>
+              {/* Information sur le délai de 24h */}
+              {lastCodeInfo && (
+                <div style={{
+                  background: lastCodeInfo.canTransfer ? '#f0fdf4' : '#fef2f2',
+                  padding: '16px',
+                  borderRadius: '8px',
+                  marginBottom: '20px',
+                  border: `2px solid ${lastCodeInfo.canTransfer ? '#86efac' : '#fca5a5'}`
+                }}>
+                  <div style={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '8px'
+                  }}>
+                    <span style={{ fontSize: '20px' }}>
+                      {lastCodeInfo.canTransfer ? '✅' : '⏰'}
+                    </span>
+                    <strong style={{ 
+                      color: lastCodeInfo.canTransfer ? '#166534' : '#991b1b',
+                      fontSize: '15px'
+                    }}>
+                      {lastCodeInfo.canTransfer ? 'Transfert autorisé' : 'Délai de 24h non écoulé'}
+                    </strong>
+                  </div>
+                  <p style={{ 
+                    margin: 0, 
+                    color: lastCodeInfo.canTransfer ? '#166534' : '#991b1b',
+                    fontSize: '13px',
+                    lineHeight: '1.5'
+                  }}>
+                    Dernière action : {lastCodeInfo.lastCodeDateTime}<br />
+                    Temps écoulé : <strong>{lastCodeInfo.hoursElapsed}h</strong> / 24h requises
+                    {!lastCodeInfo.canTransfer && (
+                      <>
+                        <br />
+                        <strong>Temps restant : {(24 - lastCodeInfo.hoursElapsed).toFixed(1)}h</strong>
+                      </>
+                    )}
+                  </p>
+                </div>
+              )}
+              
+              <div style={{
+                background: '#f1f5f9',
+                padding: '16px',
+                borderRadius: '8px',
+                marginBottom: '20px',
+                border: '1px solid #e2e8f0'
+              }}>
+                <p style={{ 
+                  margin: 0, 
+                  color: '#475569',
+                  fontSize: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span style={{ fontSize: '18px' }}>ℹ️</span>
+                  Sélectionnez l&apos;opérateur vers qui vous souhaitez transférer ce ticket
+                </p>
+              </div>
+              
+              <label style={{
+                display: 'block',
+                marginBottom: '8px',
+                color: '#334155',
+                fontWeight: '600',
+                fontSize: '14px'
+              }}>
+                Nouvel opérateur
+              </label>
+              <select
+                value={selectedEmployeeForTransfer}
+                onChange={(e) => setSelectedEmployeeForTransfer(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '14px 16px',
+                  borderRadius: '8px',
+                  border: '2px solid #cbd5e1',
+                  fontSize: '15px',
+                  marginBottom: '24px',
+                  backgroundColor: 'white',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  color: '#1e293b',
+                  fontWeight: '500'
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                onBlur={(e) => e.target.style.borderColor = '#cbd5e1'}
+              >
+                <option value="" style={{ color: '#94a3b8' }}>-- Choisir un opérateur --</option>
+                {allEmployees?.map((emp) => (
+                  <option key={emp.fullKey} value={emp.fullKey}>
+                    👤 {emp.name} (ID: {emp.id})
+                  </option>
+                ))}
+              </select>
+              
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setShowTransferModal(false)}
+                  style={{
+                    padding: '12px 24px',
+                    borderRadius: '8px',
+                    border: '2px solid #e2e8f0',
+                    background: 'white',
+                    color: '#64748b',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#f8fafc';
+                    e.currentTarget.style.borderColor = '#cbd5e1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'white';
+                    e.currentTarget.style.borderColor = '#e2e8f0';
+                  }}
+                >
+                  ❌ Annuler
+                </button>
+                <button
+                  onClick={handleTransferTicket}
+                  disabled={!selectedEmployeeForTransfer || transferring || (lastCodeInfo && !lastCodeInfo.canTransfer)}
+                  style={{
+                    padding: '12px 28px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: selectedEmployeeForTransfer && !transferring && (!lastCodeInfo || lastCodeInfo.canTransfer)
+                      ? 'linear-gradient(135deg, #10b981, #059669)' 
+                      : '#cbd5e1',
+                    color: 'white',
+                    fontWeight: '600',
+                    cursor: selectedEmployeeForTransfer && !transferring && (!lastCodeInfo || lastCodeInfo.canTransfer) ? 'pointer' : 'not-allowed',
+                    fontSize: '14px',
+                    transition: 'all 0.2s',
+                    boxShadow: selectedEmployeeForTransfer && !transferring && (!lastCodeInfo || lastCodeInfo.canTransfer)
+                      ? '0 4px 12px rgba(16, 185, 129, 0.4)' 
+                      : 'none',
+                    transform: 'translateY(0)'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedEmployeeForTransfer && !transferring && (!lastCodeInfo || lastCodeInfo.canTransfer)) {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.5)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = selectedEmployeeForTransfer && !transferring && (!lastCodeInfo || lastCodeInfo.canTransfer)
+                      ? '0 4px 12px rgba(16, 185, 129, 0.4)' 
+                      : 'none';
+                  }}
+                >
+                  {transferring ? '⏳ Transfert en cours...' : '✅ Confirmer le transfert'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal de récupération de ticket (opérateur) */}
+      {showTakeForSelfModal && (
+        <div className="modal-overlay" onClick={() => setShowTakeForSelfModal(false)}>
+          <div className="modal-content transfer-modal" onClick={(e) => e.stopPropagation()} style={{
+            maxWidth: '500px',
+            borderRadius: '16px',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)'
+          }}>
+            <div className="modal-header" style={{
+              background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+              color: 'white',
+              padding: '24px',
+              borderRadius: '16px 16px 0 0'
+            }}>
+              <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '700' }}>📥 Récupérer ce ticket</h2>
+              <button 
+                onClick={() => setShowTakeForSelfModal(false)}
+                style={{
+                  position: 'absolute',
+                  top: '20px',
+                  right: '20px',
+                  background: 'rgba(255, 255, 255, 0.2)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  cursor: 'pointer',
+                  color: 'white',
+                  fontSize: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="modal-body" style={{ padding: '24px' }}>
+              {/* Information sur le délai de 24h */}
+              {takeLastCodeInfo && (
+                <div style={{
+                  background: takeLastCodeInfo.canTake ? '#f0fdf4' : '#fef2f2',
+                  padding: '16px',
+                  borderRadius: '8px',
+                  marginBottom: '20px',
+                  border: `2px solid ${takeLastCodeInfo.canTake ? '#86efac' : '#fca5a5'}`
+                }}>
+                  <div style={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '8px'
+                  }}>
+                    <span style={{ fontSize: '20px' }}>
+                      {takeLastCodeInfo.canTake ? '✅' : '⏰'}
+                    </span>
+                    <strong style={{ 
+                      color: takeLastCodeInfo.canTake ? '#166534' : '#991b1b',
+                      fontSize: '15px'
+                    }}>
+                      {takeLastCodeInfo.canTake ? 'Récupération autorisée' : 'Délai de 24h non écoulé'}
+                    </strong>
+                  </div>
+                  <p style={{ 
+                    margin: 0, 
+                    color: takeLastCodeInfo.canTake ? '#166534' : '#991b1b',
+                    fontSize: '13px',
+                    lineHeight: '1.5'
+                  }}>
+                    Dernière action : {takeLastCodeInfo.lastCodeDateTime}<br />
+                    Temps écoulé : <strong>{takeLastCodeInfo.hoursElapsed}h</strong> / 24h requises
+                    {!takeLastCodeInfo.canTake && (
+                      <>
+                        <br />
+                        <strong>Temps restant : {(24 - takeLastCodeInfo.hoursElapsed).toFixed(1)}h</strong>
+                      </>
+                    )}
+                  </p>
+                </div>
+              )}
+              
+              <div style={{
+                background: '#fef3c7',
+                padding: '16px',
+                borderRadius: '8px',
+                marginBottom: '20px',
+                border: '1px solid #fbbf24'
+              }}>
+                <p style={{ 
+                  margin: 0, 
+                  color: '#78350f',
+                  fontSize: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span style={{ fontSize: '18px' }}>⚠️</span>
+                  Ce ticket sera transféré de l&apos;opérateur actuel vers votre file d&apos;attente
+                </p>
+              </div>
+              
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setShowTakeForSelfModal(false)}
+                  style={{
+                    padding: '12px 24px',
+                    borderRadius: '8px',
+                    border: '2px solid #e2e8f0',
+                    background: 'white',
+                    color: '#64748b',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#f8fafc';
+                    e.currentTarget.style.borderColor = '#cbd5e1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'white';
+                    e.currentTarget.style.borderColor = '#e2e8f0';
+                  }}
+                >
+                  ❌ Annuler
+                </button>
+                <button
+                  onClick={handleTakeForSelf}
+                  disabled={takingForSelf || (takeLastCodeInfo && !takeLastCodeInfo.canTake)}
+                  style={{
+                    padding: '12px 28px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: !takingForSelf && (!takeLastCodeInfo || takeLastCodeInfo.canTake)
+                      ? 'linear-gradient(135deg, #f59e0b, #d97706)' 
+                      : '#cbd5e1',
+                    color: 'white',
+                    fontWeight: '600',
+                    cursor: !takingForSelf && (!takeLastCodeInfo || takeLastCodeInfo.canTake) ? 'pointer' : 'not-allowed',
+                    fontSize: '14px',
+                    transition: 'all 0.2s',
+                    boxShadow: !takingForSelf && (!takeLastCodeInfo || takeLastCodeInfo.canTake)
+                      ? '0 4px 12px rgba(245, 158, 11, 0.4)' 
+                      : 'none',
+                    transform: 'translateY(0)'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!takingForSelf && (!takeLastCodeInfo || takeLastCodeInfo.canTake)) {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 6px 16px rgba(245, 158, 11, 0.5)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = !takingForSelf && (!takeLastCodeInfo || takeLastCodeInfo.canTake)
+                      ? '0 4px 12px rgba(245, 158, 11, 0.4)' 
+                      : 'none';
+                  }}
+                >
+                  {takingForSelf ? '⏳ Récupération en cours...' : '✅ Confirmer la récupération'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1667,7 +2348,7 @@ function UnassignedContent({ onDragStart, isAdmin, refreshTrigger, user }: {
   );
 }
 
-function EmployeeContent({ employeeKey }: EmployeeContentProps) {
+function EmployeeContent({ employeeKey, user, allEmployees, onDataRefresh }: EmployeeContentProps) {
   const [excelData, setExcelData] = useState<ExcelData>({
     headers: [],
     data: [],
@@ -1681,6 +2362,21 @@ function EmployeeContent({ employeeKey }: EmployeeContentProps) {
   const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
   const [selectedRow, setSelectedRow] = useState<RowDetail | null>(null);
   const [showRowDetails, setShowRowDetails] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  const showNotification = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    const id = Date.now();
+    setNotifications(prev => [...prev, { id, type, title, message }]);
+    
+    // Auto-remove après 5 secondes
+    setTimeout(() => {
+      removeNotification(id);
+    }, 5000);
+  };
+
+  const removeNotification = (id: number) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
 
   useEffect(() => {
     fetchExcelData();
@@ -1821,7 +2517,46 @@ function EmployeeContent({ employeeKey }: EmployeeContentProps) {
         headers={excelData.headers}
         isOpen={showRowDetails}
         onClose={closeRowDetails}
+        canTransfer={user?.role === 'admin'}
+        allEmployees={allEmployees}
+        onTransfer={() => {
+          fetchExcelData();
+          if (onDataRefresh) {
+            onDataRefresh();
+          }
+        }}
+        canTakeForSelf={user?.role === 'user' && user?.employee?.linked}
+        onTakeForSelf={() => {
+          fetchExcelData();
+          if (onDataRefresh) {
+            onDataRefresh();
+          }
+        }}
+        user={user}
+        onNotification={showNotification}
       />
+
+      {/* Notifications toast */}
+      {notifications.map(notification => (
+        <div key={notification.id} className={`notification-toast ${notification.type}`}>
+          <div className="notification-content">
+            <span className="notification-icon">
+              {notification.type === 'success' ? '✅' : notification.type === 'error' ? '❌' : 'ℹ️'}
+            </span>
+            <div className="notification-text">
+              <div className="notification-title">{notification.title}</div>
+              <div className="notification-message">{notification.message}</div>
+            </div>
+          </div>
+          <button 
+            className="notification-close" 
+            onClick={() => removeNotification(notification.id)}
+            aria-label="Fermer"
+          >
+            ×
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -2710,7 +3445,12 @@ export default function Dashboard() {
     // Gérer les onglets d'employés
     if (activeTab.startsWith("employee-")) {
       const employeeKey = activeTab.replace("employee-", "");
-      return <EmployeeContent employeeKey={employeeKey} />;
+      return <EmployeeContent 
+        employeeKey={employeeKey} 
+        user={user} 
+        allEmployees={employees}
+        onDataRefresh={fetchExcelData}
+      />;
     }
     
     switch (activeTab) {
