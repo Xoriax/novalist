@@ -5,7 +5,7 @@ interface TicketLog {
   action: string;
   description: string;
   date: string;
-  type: 'creation' | 'opening' | 'action' | 'assignment';
+  type: 'creation' | 'opening' | 'action' | 'assignment' | 'closure';
   icon: string;
 }
 
@@ -28,7 +28,7 @@ const TicketLogSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['creation', 'opening', 'action', 'assignment'],
+    enum: ['creation', 'opening', 'action', 'assignment', 'closure'],
     required: true,
   },
   icon: {
@@ -95,7 +95,12 @@ const TicketSchema = new mongoose.Schema({
 TicketSchema.index({ workOrderNumber: 1, customerReferenceNumber: 1 });
 TicketSchema.index({ importedFrom: 1, rowIndex: 1 });
 
-const Ticket = mongoose.models.Ticket || mongoose.model("Ticket", TicketSchema);
+// Forcer la recréation du modèle en développement pour prendre en compte les changements de schéma
+if (mongoose.models.Ticket) {
+  delete mongoose.models.Ticket;
+}
+
+const Ticket = mongoose.model("Ticket", TicketSchema);
 
 export default Ticket;
 export type { TicketLog };

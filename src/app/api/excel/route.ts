@@ -523,17 +523,33 @@ export async function POST(req: Request) {
     const activeTicketsBeforeClose = await Ticket.countDocuments({ status: 'active' });
     console.log(`Tickets actifs avant fermeture: ${activeTicketsBeforeClose}`);
     
-    const closedTicketsResult = await Ticket.updateMany(
-      { 
-        customerReferenceNumber: { $nin: Array.from(customerRefsInFile) },
-        status: 'active'
-      },
-      { 
-        $set: { status: 'closed' }
-      }
-    );
+    // Récupérer les tickets qui vont être fermés pour ajouter des logs
+    const ticketsToClose = await Ticket.find({
+      customerReferenceNumber: { $nin: Array.from(customerRefsInFile) },
+      status: 'active'
+    });
+
+    // Ajouter un log de fermeture pour chaque ticket
+    const now = new Date();
+    const closureDateTime = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+
+    for (const ticket of ticketsToClose) {
+      const closureLog = {
+        id: ticket.logs.length + 1,
+        action: 'Ticket fermé',
+        description: `Ticket absent du fichier Excel - Fermé automatiquement`,
+        date: closureDateTime,
+        type: 'closure' as const,
+        icon: '🔒'
+      };
+      
+      ticket.logs.unshift(closureLog);
+      ticket.status = 'closed';
+      await ticket.save();
+    }
     
-    console.log(`🔒 Tickets fermés: ${closedTicketsResult.modifiedCount}`);
+    console.log(`🔒 Tickets fermés: ${ticketsToClose.length}`);
+    const closedTicketsResult = { modifiedCount: ticketsToClose.length };
 
     console.log(`Créé ${newTickets.length} nouveaux tickets, ${updatedTickets.length} tickets mis à jour, ${skippedTickets.length} tickets ignorés, ${closedTicketsResult.modifiedCount} tickets fermés`);
 
